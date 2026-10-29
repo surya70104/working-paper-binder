@@ -1,0 +1,38 @@
+{
+  "name": "statutory",
+  "label": "Statutory audit",
+  "status": "draft: section names and required papers are those the specification names (spec 3A); the list is for chartered accountant review before live use",
+  "sections": [
+    {"code": "A", "name": "Acceptance"},
+    {"code": "B", "name": "Planning and risk"},
+    {"code": "C", "name": "Materiality"},
+    {"code": "D", "name": "Financial statement area D"},
+    {"code": "E", "name": "Financial statement area E"},
+    {"code": "F", "name": "Financial statement area F"},
+    {"code": "G", "name": "Financial statement area G"},
+    {"code": "H", "name": "Financial statement area H"},
+    {"code": "I", "name": "Financial statement area I"},
+    {"code": "J", "name": "Financial statement area J"},
+    {"code": "K", "name": "Financial statement area K"},
+    {"code": "L", "name": "Financial statement area L"},
+    {"code": "M", "name": "Financial statement area M"},
+    {"code": "N", "name": "Financial statement area N"},
+    {"code": "O", "name": "Financial statement area O"},
+    {"code": "P", "name": "Financial statement area P"},
+    {"code": "Q", "name": "Financial statement area Q"},
+    {"code": "R", "name": "Financial statement area R"},
+    {"code": "S", "name": "Financial statement area S"},
+    {"code": "T", "name": "Financial statement area T"},
+    {"code": "W", "name": "Completion"},
+    {"code": "X", "name": "Report and opinion"},
+    {"code": "Z", "name": "EQR"}
+  ],
+  "required": [
+    {"ref": "A-1", "section": "A", "title": "Acceptance and continuance", "sa_refs": ["SA 210", "SA 220"]},
+    {"ref": "B-1", "section": "B", "title": "Planning and risk assessment", "sa_refs": ["SA 300", "SA 315"]},
+    {"ref": "C-1", "section": "C", "title": "Materiality memo", "sa_refs": ["SA 320"]},
+    {"ref": "W-1", "section": "W", "title": "Completion", "sa_refs": []},
+    {"ref": "X-1", "section": "X", "title": "Report and opinion", "sa_refs": ["SA 700"]},
+    {"ref": "Z-1", "section": "Z", "title": "Engagement quality review", "sa_refs": ["SA 220"]}
+  ]
+}

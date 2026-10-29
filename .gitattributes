@@ -1,0 +1,15 @@
+# Normalise line endings: LF in the repository and in the checkout,
+# except Windows scripts, which need CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary: never diff or normalise
+*.png binary
+*.jpg binary
+*.pdf binary
+*.xlsx binary
+*.xls binary
+*.docx binary
+*.zip binary

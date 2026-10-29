@@ -1,0 +1,51 @@
+# Secrets: only .env.example is tracked
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+*.pem
+*.key
+
+# Python
+backend/.venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/e2e-results/
+frontend/e2e-report/
+frontend/playwright-report/
+frontend/test-results/
+frontend/coverage/
+npm-debug.log*
+
+# Local runtime data: attachments, exports, archives. Never committed.
+var/
+
+# Generated and temporary
+*.log
+*.tmp
+*.bak
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code local settings
+.claude/settings.local.json
