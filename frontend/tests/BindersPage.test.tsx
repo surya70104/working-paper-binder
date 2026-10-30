@@ -7,9 +7,28 @@ import { binderFixture, mockApi } from "./mockApi";
 afterEach(() => vi.unstubAllGlobals());
 
 const templates = [
-  { name: "statutory", label: "Statutory audit", status: "draft", draft: true, placeholders: [], sections: [], required: [] },
-  { name: "tax_audit", label: "Tax audit", status: "draft", draft: true, placeholders: [], sections: [], required: [] },
+  {
+    name: "statutory",
+    label: "Statutory audit",
+    status: "draft: for chartered accountant review",
+    draft: true,
+    placeholders: ["financial statement areas D-T (17) carry generic names", "marked draft"],
+    sections: [],
+    required: [],
+  },
+  { name: "tax_audit", label: "Tax audit", status: "approved", draft: false, placeholders: [], sections: [], required: [] },
 ];
+
+test("a draft template shows its placeholders on the creation form", async () => {
+  mockApi({ "GET /api/binders": [], "GET /api/templates": templates });
+  render(<BindersPage />);
+  await screen.findByText("No binders yet.");
+  const warning = await screen.findByTestId("template-draft");
+  expect(warning).toHaveTextContent("This index template is a draft: draft: for chartered accountant review");
+  expect(warning).toHaveTextContent("financial statement areas D-T (17) carry generic names");
+  fireEvent.change(screen.getByLabelText("Index template"), { target: { value: "tax_audit" } });
+  expect(screen.queryByTestId("template-draft")).not.toBeInTheDocument();
+});
 
 test("the binder list links to each binder and shows its state", async () => {
   mockApi({

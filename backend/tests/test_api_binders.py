@@ -70,6 +70,21 @@ def test_completeness_counts_only_required_references_with_no_paper(api: TestCli
     assert [p["ref"] for p in section_d["papers"]] == ["D-1"]
 
 
+def test_a_required_paper_counts_only_in_its_own_section(api: TestClient) -> None:
+    # Spec 3A: missing "per section". C-1 filed under section D does not satisfy C-1 in C.
+    binder = create_binder(api)
+    api.post(
+        f"/api/binders/{binder['id']}/papers",
+        json={"ref": "C-1", "section": "D", "title": "Misfiled materiality memo"},
+    ).raise_for_status()
+    binder = api.get(f"/api/binders/{binder['id']}").json()
+    assert binder["missing_required"] == 6
+    section_c = next(s for s in binder["sections"] if s["code"] == "C")
+    assert [m["ref"] for m in section_c["missing"]] == ["C-1"]
+    section_d = next(s for s in binder["sections"] if s["code"] == "D")
+    assert [p["ref"] for p in section_d["papers"]] == ["C-1"]
+
+
 def test_report_date_sets_both_clocks_and_the_countdown(api: TestClient) -> None:
     binder = create_binder(api, report_date="2026-09-30")
     assert binder["assembly_due"] == "2026-11-29"

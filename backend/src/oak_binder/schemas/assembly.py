@@ -6,8 +6,16 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from oak_binder.clocks import days_to_assembly
-from oak_binder.models import Binder, BinderEvent
+from oak_binder.models import AccessLog, Binder, BinderEvent
 from oak_binder.services.assembly import Blocker, Verification
+
+
+class AccessOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    user: str
+    action: str
+    at: datetime
 
 
 class BlockerOut(BaseModel):
@@ -43,6 +51,8 @@ class AssemblyStatusOut(BaseModel):
     not_checked: list[str]
     manifest: dict[str, Any] | None
     events: list[EventOut]
+    # Spec 3H: who opened the file after assembly. Empty for an open binder.
+    access: list[AccessOut]
 
     @classmethod
     def build(
@@ -54,9 +64,11 @@ class AssemblyStatusOut(BaseModel):
         history: list[BinderEvent],
         today: date,
         matches_recorded_manifest: bool,
+        access_rows: list[AccessLog],
     ) -> AssemblyStatusOut:
         return cls(
             matches_recorded_manifest=matches_recorded_manifest,
+            access=[AccessOut.model_validate(a) for a in access_rows],
             state=binder.state,
             report_date=binder.report_date,
             assembly_due=binder.assembly_due,

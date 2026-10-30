@@ -21,6 +21,8 @@ from oak_binder.services.attachments import (
     build_store,
     verified_read,
 )
+from oak_binder.services.google_drive import GoogleDriveStore
+from tests.fake_drive import FakeDrive
 
 PDF = b"%PDF-1.4 minimal\n"
 CSV = b"a,b\n1,2\n"
@@ -39,9 +41,16 @@ def stores(
         assert isinstance(store, InMemoryVaultStore)
         store.tamper(doc_id, data)
 
+    drive = FakeDrive()
+
+    def tamper_drive(store: AttachmentStore, doc_id: str, data: bytes) -> None:
+        assert isinstance(store, GoogleDriveStore)
+        drive.tamper(doc_id, data)
+
     return [
         ("local", LocalAttachmentStore(tmp_path / "store"), tamper_local),
         ("vault", InMemoryVaultStore(), tamper_vault),
+        ("drive", drive.store(), tamper_drive),
     ]
 
 
@@ -50,7 +59,7 @@ def attachment_like(doc_id: str, data: bytes) -> Any:
     return SimpleNamespace(vault_doc_id=doc_id, sha256=sha256_of_bytes(data))
 
 
-@pytest.mark.parametrize("index", [0, 1], ids=["local", "vault"])
+@pytest.mark.parametrize("index", [0, 1, 2], ids=["local", "vault", "drive"])
 def test_round_trip_exists_and_delete(tmp_path: Path, index: int) -> None:
     _, store, _ = stores(tmp_path)[index]
     assert isinstance(store, AttachmentStore)  # the runtime-checkable protocol
@@ -65,7 +74,7 @@ def test_round_trip_exists_and_delete(tmp_path: Path, index: int) -> None:
         store.read(doc_id)
 
 
-@pytest.mark.parametrize("index", [0, 1], ids=["local", "vault"])
+@pytest.mark.parametrize("index", [0, 1, 2], ids=["local", "vault", "drive"])
 def test_altered_bytes_are_refused_by_verified_read_whatever_the_store(
     tmp_path: Path, index: int
 ) -> None:
@@ -115,12 +124,17 @@ def test_build_store_defaults_to_local(tmp_path: Path) -> None:
     assert store.root == (tmp_path / "attachments").resolve()
 
 
-def test_build_store_refuses_vault_until_an_adapter_exists(tmp_path: Path) -> None:
+def test_build_store_vault_needs_the_credential_files_before_it_opens(tmp_path: Path) -> None:
+    # Vault mode is the Drive adapter (D27). Without the files it fails at start-up with a
+    # plain message, never half-configured, and never with a file's contents.
+    from oak_binder.errors import StoreUnavailable
+
     settings = _settings(
         store="vault",
-        vault_url="https://vault.example.test",
-        vault_credential="x",
-        vault_container="c",
+        vault_url="https://www.googleapis.com/drive/v3",
+        vault_credential=str(tmp_path / "token.json"),
+        vault_container="1XiA9-vRVldypsN61ZPRj-T3bq1pYGY12",
+        vault_client_file=str(tmp_path / "client.json"),
     )
-    with pytest.raises(NotImplementedError, match="no vault adapter exists yet"):
+    with pytest.raises(StoreUnavailable, match="OAuth client file not found"):
         build_store(settings)

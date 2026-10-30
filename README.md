@@ -51,6 +51,8 @@ Materiality, Sampling and the vault is Pass 2 work and will go through APIs only
 | 5 | The Binder and Working paper screens | done |
 | 6 | Attachments, assembly with the lock and manifest, amendments, retention and purge, produce-file export, the Assembly screen | done; migration 0002 applied to `oak_binder_test`, suite green, assembly and production exercised in the browser |
 | 7 | Review notes: raised → assigned → responded → cleared; an open note blocks sign-off and assembly; the Review notes screen | done; migration 0003 applied to `oak_binder_test`, suite green |
+| 8 | Pass 1 completion: header-based authentication (`OAK_AUTH`), the post-assembly access log (spec §3H), cross-references with broken-reference blocking (spec §3E), completeness and purge-state fixes, draft-template warning | done; migrations 0004 and 0005 applied to `oak_binder_test`, suites green (D24–D26) |
+| 9 | Google Drive as the vault (spec §6 "attachments from the vault"): adapter behind the storage protocol, one-time consent, migration of local attachments, proxy-identity hardening | done; consent, folder check and the migration of the one local attachment run against `oak_binder_test`; vault mode verified on the development backend (D27) |
 
 Pass 1 scope (spec §6): index and templates · the working paper record with preparer and
 reviewer sign-off · attachments · completeness view · assembly with the 60-day clock and the
@@ -180,12 +182,12 @@ Interactive documentation is at <http://localhost:8001/docs> when the API runs.
 | `GET /api/binders/{id}` | The binder with its index tree, completeness count and assembly countdown |
 | `PATCH /api/binders/{id}` | Set or clear the report date; both clocks follow |
 | `POST /api/binders/{id}/papers` | Create a working paper; the reference is unique and immutable |
-| `GET /api/papers/{id}`, `PATCH /api/papers/{id}` | Read a paper with its versions; edit its content (returns it to draft) |
+| `GET /api/papers/{id}`, `PATCH /api/papers/{id}` | Read a paper with its versions, attachments and cross-references; edit its content (returns it to draft) |
 | `GET /api/papers/{id}/versions` | The immutable version history |
 | `POST /api/papers/{id}/prepare`, `/submit`, `/review`, `/sign-off` | The workflow: draft → prepared → in review → reviewed → signed off |
 | `POST /api/papers/{id}/attachments` (multipart) | Attach a native-format file with its identifying characteristics; after assembly, with an amendment reason |
 | `GET /api/attachments/{id}`, `GET …/content`, `DELETE /api/attachments/{id}` | Read, download (hash re-checked), remove before assembly |
-| `GET /api/binders/{id}/assembly` | State, named blockers, what is not checked (Pass 2), manifest, retention, events |
+| `GET /api/binders/{id}/assembly` | State, named blockers, what is not checked, manifest, retention, events, the access log |
 | `POST /api/binders/{id}/assemble` | Freeze the file: manifest and SHA-256 file hash; re-assemble after amendments |
 | `GET /api/binders/{id}/verify` | Recompute every hash and compare with what was recorded |
 | `GET /api/binders/{id}/produce` | One zip: manifest, binder, audit trail, every paper, version and attachment, checksums |
@@ -193,6 +195,7 @@ Interactive documentation is at <http://localhost:8001/docs> when the API runs.
 | `POST /api/papers/{id}/review-notes`, `GET …/review-notes` | Raise a review note on a paper; list its notes |
 | `POST /api/review-notes/{id}/assign`, `/respond`, `/clear` | The chain raised → assigned → responded → cleared, in order only |
 | `GET /api/binders/{id}/review-notes` | Screen 3: what is open, raised by whom, assigned to whom, blocking what |
+| `POST /api/papers/{id}/xrefs`, `GET …/xrefs`, `DELETE /api/xrefs/{id}` | Cross-references (spec §3E): add one with exactly one target, list in and out with the check result, remove before assembly |
 
 Rules enforced in the workflow: a sign-off needs a conclusion; an open review note blocks
 sign-off (real notes, migration 0003; see "Review notes" below); steps run only in order;
@@ -205,11 +208,8 @@ retention.
 
 - **Attachments** are kept behind a storage protocol (D23). `OAK_STORE=local`, the default,
   is a write-once store under `var\attachments` (`OAK_ATTACHMENTS_DIR`), outside anything a
-  web server serves, named by SHA-256. **Vault integration has not been done, because no
-  vault exists**: a search of this project, the Financial Spine (`D:\CAF`), the OAK notes and
-  every project document on 29 October 2026 found no vault module, API or credentials (D16).
-  `OAK_STORE=vault` is reserved: it needs `OAK_VAULT_URL`, `OAK_VAULT_CREDENTIAL` and
-  `OAK_VAULT_CONTAINER`, and the application refuses to start on it until an adapter exists.
+  web server serves, named by SHA-256. `OAK_STORE=vault` is the firm's **Google Drive**
+  folder (D27; see "Google Drive vault" below).
   On every row the store's document id (`vault_doc_id`) and the Binder's own SHA-256 are
   kept apart; every read re-hashes the bytes and refuses a mismatch, whichever store serves
   them. Identical bytes are stored once; a purge deletes a document only when no paper in
@@ -217,18 +217,20 @@ retention.
   belongs to the paper and joins the signed record at the next prepare; each version body
   lists the paper's attachments by hash.
 - **Assembly** is blocked by named items: each missing required paper, each paper not signed
-  off, each paper with open review notes, an undated report. Broken cross-references are
-  Pass 2 and are shown as *not checked*: cross-reference data (spec §3E, §4 `xref`) does
-  not exist yet, so nothing can be detected (D21). Assemble records a manifest and a
+  off, each paper with open review notes, each broken cross-reference, an undated report.
+  A reference to a paper or to a document is checked (D26); a reference to a
+  financial-statement line cannot be followed without the Spine and is shown as *not
+  checked*, with the count of such references. Assemble records a manifest and a
   SHA-256 file hash that anyone can recompute from the manifest. After assembly a change needs an amendment reason and
   writes a new version plus an event; nothing is deleted; re-assembly records the new hash
   with the previous one.
 - **Retention**: purge is refused before the retention date. After it, purge destroys the
   attachment content and records the purge; paper and version rows stay with their hashes
   (D18). **The content is purged; the metadata remains.**
-- **Produce file**: one zip with the manifest, the binder, the audit trail (binder events
-  and every review-note step), every paper with its versions, review notes and attachments
-  in native format, and a checksum list (D19, D22). Paper folders are made unique even when
+- **Produce file**: one zip with the manifest, the binder, the audit trail (binder events,
+  every review-note step and every access), the access log, every paper with its versions,
+  review notes, cross-references and attachments in native format, and a checksum list
+  (D19, D22, D25, D26). Paper folders are made unique even when
   two references sanitise alike. Production is refused between an amendment and the next
   re-assembly, because the recorded manifest would no longer describe the file; the Assembly
   screen says so and withholds the link.
@@ -253,10 +255,95 @@ screen (spec screen 3) lists what is open across the binder, who raised it, who 
 what it blocks. `tests\test_api_review_notes.py` covers every transition, each out-of-order
 refusal, and both blocks; `tests\test_db_rules_review_notes.py` covers the append-only rules.
 
-Still outside Pass 1: the broken-reference blocker (Pass 2, shown as *not checked*; D21
-explains why it cannot detect anything until the Spine and a document store exist), and the
-post-assembly access log of spec §3H, which §6 assigns to neither pass and which is not
-built. The `produced` event records every export.
+### Google Drive vault (D27)
+
+The vault is one Google Drive folder the firm created by hand, reached through the Drive
+REST API with a Desktop OAuth client. `services\google_drive.py` implements the storage
+protocol: the document id is Drive's file id, the Binder's SHA-256 stays on every row and is
+re-checked on every read, uploads are verified against Drive's checksum and then locked with
+Drive's read-only restriction, and nothing ever calls the update-content endpoint.
+
+**Permissions, stated plainly.** A folder a person created is not reachable with the narrow
+`drive.file` scope (that scope covers only files the application created or a person picked
+for it in Google's picker), so the consent asks for the full `drive` scope. **That scope
+technically lets the token read, change and delete anything in the consenting Google
+account's Drive.** The application confines itself to the vault folder: every file it creates
+has the folder as its only parent and carries an application marker; every read, existence
+check and delete first fetches the file's metadata and refuses anything not filed by the
+Binder in that folder; it never lists, searches or touches other files, and the test double
+asserts so. The confinement is the application's discipline, not Google's enforcement: anyone
+who obtains the refresh-token file has the whole Drive. Keep `backend\secrets` on the server
+only, with owner-only permissions, and revoke the consent at myaccount.google.com if it is
+ever exposed. Drive's read-only restriction is likewise soft: a person with edit rights can
+lift it, and the Binder's hash check is what catches a changed file.
+
+**Setting it up**, in this order, with `OAK_STORE` left at `local` until the last step:
+
+1. In Google Cloud: the Drive API enabled, a Desktop OAuth client downloaded to
+   `backend\secrets\google-oauth-client.json`, and the OAuth consent screen **In production**
+   (while it is in Testing, Google expires refresh tokens after seven days).
+2. In `backend\.env`: `OAK_VAULT_URL`, `OAK_VAULT_CONTAINER` (the folder id),
+   `OAK_VAULT_CLIENT_FILE` and `OAK_VAULT_CREDENTIAL` as in `.env.example`.
+3. `python -m oak_binder.vault_login`: opens the Google consent in the browser, saves the
+   refresh token to the credential file, then reads the folder and prints its name. It fails
+   with a plain reason if the folder is not visible or writable. `--check` repeats only the
+   folder check; `--no-browser` prints the URL instead of opening it.
+4. `python -m oak_binder.vault_migrate` (dry run) then `--apply`: uploads every local
+   attachment once, verifies it by hash, rewrites `wp_attachment.vault_doc_id` and
+   `xref.to_vault_doc` from the local key to the Drive id, and keeps the local files. Version
+   bodies and manifests list attachments by hash, so nothing signed changes.
+5. Set `OAK_STORE=vault` and restart.
+
+Tests: `tests\test_google_drive.py` (the adapter against a Drive double), `tests\test_storage.py`
+(the storage contract over local, stand-in and Drive), `tests\test_api_drive_store.py` (upload,
+download, verify, produce and purge through Drive), `tests\test_vault_migrate.py`,
+`tests\test_secrets_hygiene.py`. None reaches the network; no test reads the secrets folder.
+
+### Cross-references
+
+Spec §3B, §3E, §4 `xref · from_wp · to_wp | to_fs_line | to_vault_doc · direction`. A
+reference is written on one paper and names exactly one target: another paper of the same
+binder, a financial-statement line (free text until the Spine exists), or a document attached
+in this binder, by its store id. `direction` says which way it reads: `to`, this paper refers
+to the target; `from`, the target refers to this paper. The Working paper screen shows the
+paper's references in and out: paper targets are clickable in both directions, a document
+target links to the attachment it is filed as, and the paper carrying that document sees the
+reference coming in. References
+are added and removed while the binder is open and are frozen with the file at assembly.
+**A broken reference blocks assembly, named per paper** (spec §3E, §3F, §8.3): a document
+target that no paper of the binder carries any more is broken; a paper target is checked to
+be a paper of the same binder; an FS-line target cannot be checked and is listed as *not
+checked*. References are not part of the manifest hash, so an already-assembled file still
+matches its recorded manifest after migration 0005. Decision D26; tests in
+`tests\test_api_xrefs.py` and `tests\test_db_rules_xref.py`.
+
+### Access log
+
+Spec §3H, §4 `access_log · binder · user · action · at`, post-assembly only, append-only
+(migration 0004, D25). Every read of an assembled or purged binder is recorded: the binder,
+a paper, its versions, its review notes, its cross-references, an attachment's details or
+bytes, the binder's review notes, the assembly status, a verification, a production. Reads of
+an open binder are not logged. Because the log must say who, a read of an assembled file
+requires an identity and is refused without one. The Assembly screen lists the log; the
+produced archive carries it as `access_log.json` and in the audit trail. Tests in
+`tests\test_api_access_log.py` and `tests\test_db_rules_access_log.py`.
+
+### Identity
+
+`OAK_AUTH=dev` (default outside production) takes the identity from `OAK_DEV_USER`.
+`OAK_AUTH=header` takes it from the header an authenticating reverse proxy sets after signing
+the user in (`OAK_AUTH_HEADER`, default `X-Authenticated-User`). The header is believed only
+when the request's peer address is in `OAK_TRUSTED_PROXIES` (a comma-separated list of IPs or
+networks; required in production, so a client that reaches the API directly cannot name
+itself), when it appears exactly once (a proxy that appends rather than replaces would leave
+a client's copy in front), and when its value is a plausible name (at most 254 printable
+characters). Otherwise a request that needs an identity is refused with 401. The peer address
+is the socket peer, so run uvicorn without `--proxy-headers`: the proxy must be the peer.
+The Binder verifies nothing about the person itself; which proxy or identity provider the
+firm uses is its decision (D24). Every response carries `Cache-Control: no-store`,
+`X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. Production refuses
+`OAK_AUTH=dev`. Tests in `tests\test_identity.py`, `tests\test_security_headers.py` and
+`tests\test_config.py`.
 
 ### Test database and browser-demo data
 
@@ -278,10 +365,10 @@ Recorded in full as decision D16 in [docs/architecture.md](docs/architecture.md)
 - **Template content** is placeholder-level pending chartered accountant review. Section
   names and the six required papers come from the specification's own words; areas D to T
   are unnamed and all four templates are nearly identical.
-- **One development identity** (D8). Preparer, reviewer and signer are whatever
-  `OAK_DEV_USER` says, so a browser walk-through shows one person in every role.
-- **Access log of who opened the file after assembly** (spec §3H, §4): listed in neither pass
-  by spec §6, not built. Needs a decision before it is scheduled.
+- **One development identity** in `dev` mode (D8). Preparer, reviewer and signer are whatever
+  `OAK_DEV_USER` says, so a browser walk-through shows one person in every role. `header`
+  mode (D24) gives each request the identity the proxy presents.
+- **Access log** (spec §3H, §4): built in Stage 8 (D25).
 
 ### Markdown in working papers
 
@@ -300,5 +387,8 @@ Two rules are enforced by the settings module and covered by `backend\tests\test
 - A database URL is accepted only if it names `oak_binder` or `oak_binder_test`. A URL
   pointing at any other database, including the Financial Spine's, is refused before any
   connection is attempted.
-- With `OAK_ENV=production`, `OAK_DEV_USER` must be unset and the database must be
-  `oak_binder`. The application refuses to start otherwise.
+- With `OAK_ENV=production`, `OAK_AUTH` must be `header`, `OAK_TRUSTED_PROXIES` must name the
+  proxy, `OAK_DEV_USER` must be unset and the database must be `oak_binder`. The application
+  refuses to start otherwise.
+- `OAK_AUTH=header` needs a non-blank `OAK_AUTH_HEADER`; `OAK_STORE=vault` needs the three
+  `OAK_VAULT_*` values and, until an adapter exists, refuses to start.

@@ -59,6 +59,10 @@ SPEC_FIELDS: dict[str, set[str]] = {
         "responded_at",
         "cleared_by",
     },
+    # Spec 4: access_log binder · user · action · at (post-assembly only; spec 3H)
+    "access_log": {"binder_id", "user", "action", "at"},
+    # Spec 4: xref from_wp · to_wp | to_fs_line | to_vault_doc · direction
+    "xref": {"from_wp", "to_wp", "to_fs_line", "to_vault_doc", "direction"},
 }
 
 

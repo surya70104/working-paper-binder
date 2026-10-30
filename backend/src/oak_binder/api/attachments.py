@@ -14,7 +14,7 @@ from oak_binder.api.papers import paper_out
 from oak_binder.models import BinderState
 from oak_binder.schemas.attachments import AttachmentOut
 from oak_binder.schemas.papers import PaperOut
-from oak_binder.services import assembly, attachments, papers
+from oak_binder.services import access, assembly, attachments, papers
 from oak_binder.services.attachments import AttachmentStore
 
 router = APIRouter(tags=["attachments"])
@@ -69,13 +69,34 @@ async def upload(
 
 
 @router.get("/api/attachments/{attachment_id}")
-def get_attachment(attachment_id: uuid.UUID, session: DbSession) -> AttachmentOut:
-    return AttachmentOut.model_validate(attachments.get_attachment(session, attachment_id))
+def get_attachment(
+    attachment_id: uuid.UUID, request: Request, session: DbSession, now: Now
+) -> AttachmentOut:
+    row = attachments.get_attachment(session, attachment_id)
+    paper = papers.get_paper(session, row.wp_id)
+    binder = papers.binder_of(session, paper)
+    access.record(
+        session,
+        binder,
+        access.reader(request, binder),
+        f"attachment {row.filename} of {paper.ref} (details)",
+        now,
+    )
+    return AttachmentOut.model_validate(row)
 
 
 @router.get("/api/attachments/{attachment_id}/content")
-def download(attachment_id: uuid.UUID, request: Request, session: DbSession) -> Response:
+def download(attachment_id: uuid.UUID, request: Request, session: DbSession, now: Now) -> Response:
     row = attachments.get_attachment(session, attachment_id)
+    paper = papers.get_paper(session, row.wp_id)
+    binder = papers.binder_of(session, paper)
+    access.record(
+        session,
+        binder,
+        access.reader(request, binder),
+        f"attachment {row.filename} of {paper.ref}",
+        now,
+    )
     data = attachments.content(store_of(request), row)
     ascii_name = row.filename.encode("ascii", "replace").decode("ascii").replace('"', "")
     return Response(

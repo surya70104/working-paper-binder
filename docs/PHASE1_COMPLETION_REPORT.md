@@ -1,133 +1,137 @@
-# Working Paper Binder — SA 230 · Phase 1 completion report
+# Working Paper Binder — SA 230 · Pass 1 completion report
 
-**Date:** 29 October 2026, revised the same day after the review-note workflow (D21) and the
-index-template validation · **Project:** `D:\WORKING PAPER BINDER` (standalone; not part of CAF)
-**Basis:** `docs\WORKING_PAPER_BINDER.md` (spec), decisions D1–D21 in `docs\architecture.md`
+**Date:** 30 October 2026, final (fifth revision) ·
+**Project:** `D:\WORKING PAPER BINDER` (standalone; not part of CAF) ·
+**Basis:** `docs\WORKING_PAPER_BINDER.md` (identical to `D:\WORKING_PAPER_BINDER.md`),
+decisions D1–D27 in `docs\architecture.md`
 
 ## 1. Verdict
 
-Phase 1 (spec §6, Pass 1) is **implemented and verified, with two unresolved items**. It is
-not 100 % complete: one acceptance criterion is partly satisfied because broken-reference
-detection depends on Pass 2 cross-reference data that does not exist, and attachments use a
-local store because no vault exists to integrate with. Everything else Pass 1 names,
-including the review-note workflow, is built, tested against a real PostgreSQL database, and
-most of it has been exercised in the browser.
+**Pass 1 as spec §6 defines it is complete and verified**, including attachments from the
+vault, which is now the firm's Google Drive folder. Every Pass 1 feature exists, every Pass 1
+acceptance criterion (§8.1–§8.7, §8.9) holds, and the records of §3H and the authenticated
+action of §7 are built. The items that remain are not code this project can write: template
+content for a chartered accountant, Spine-dependent checks that §6 places in Pass 2, and the
+firm's deployment decisions. Section 6 lists each with its owner. Nothing was invented for
+sections D–T, and no external approval is claimed.
 
-## 2. Stages completed
+## 2. Pass 1 requirements, item by item
 
-| Stage | Delivered |
-|---|---|
-| 1 | Standalone git project, folder layout, spec copy, architecture notes, ignore rules |
-| 2 | Backend (Python 3.11, FastAPI, SQLAlchemy, Alembic) and frontend (React, TypeScript, Vite, Tailwind) configuration; settings guards that refuse any database but the Binder's own |
-| 3 | Separate databases and roles (`oak_binder`, `oak_binder_test`, `oak_binder_owner`, `oak_binder_app`), migration 0001: `binder`, `wp`, `wp_version`, `wp_attachment`; append-only `wp_version` enforced by trigger and grants; clocks and sign-off rules as database CHECKs |
-| 4 | Index templates per engagement type, binders with completeness and the 60-day/7-year clocks, working papers with every spec field, immutable version history, the sign-off chain draft → prepared → in review → reviewed → signed off, each step an authenticated action writing a version with actor and time |
-| 5 | Binder list, Binder and Working paper screens; markdown fields rendered through a sanitiser |
-| 6 | Attachments (native format, SHA-256, write-once local store), assembly with named blockers, manifest and reproducible file hash, post-assembly amendments with reason/author/date, verification with tamper detection, retention gating and auditable purge, one-action produce-file archive with checksums, the Assembly & retention screen; migration 0002 (`binder_event`, attachment ownership, purged state) |
-| 7 | Review notes from the spec's own record: raised → assigned → responded → cleared, append-only, each step with actor and time; an open note blocks the paper's sign-off and the binder's assembly, named per paper; the Review notes screen; migration 0003 (`review_note`). Index-template loader enforces spec §3A and §3B structure and reports placeholder content |
+| Spec | Requirement | Status | Where |
+|---|---|---|---|
+| §3A, §6 | Index template per engagement type; standard sections A, B, C, D–T, W, X, Z | Done; content beyond what the spec names is draft (CA review) | `templates/*.json`, `services/templates.py`, Binders screen warning |
+| §3A | Completeness view: missing required papers per section as a blocking count | Done | `services/binders.build_index`, Binder screen |
+| §3A | Lead schedule per area tying to the Spine | Pass 2 (Spine) | — |
+| §3B, §4 | The working paper with every field; stable reference; status chain | Done | `models/wp.py`, `services/papers.py`, Working paper screen |
+| §3B | Cross-references in and out | Done | `services/xrefs.py`, `CrossReferences.tsx` |
+| §3D, §8.2 | Review notes; open note blocks sign-off | Done (built ahead of Pass 2) | migration 0003, `services/review_notes.py` |
+| §3D | Every sign-off records who, when, which version | Done | immutable `wp_version` rows |
+| §3E, §8.3 | Broken-reference detection blocks assembly | Done for paper and document targets; FS lines *not checked* until the Spine exists | `assembly.blockers`, `xrefs.broken` |
+| §3F | 60-day countdown; Assemble freezes, hashes, writes manifest; named blockers; amendments with reason, author, date | Done | `services/assembly.py`, Assembly screen |
+| §3G, §8.7 | 7-year retention; native format; one-action produce; purge only after retention, recorded | Done | `services/retention.py`, `services/produce.py` |
+| §3H, §4 | Access log, post-assembly, append-only | Done | migration 0004, `services/access.py` |
+| §4 | Append-only `wp_version`, `review_note`, `access_log` at the database | Done | triggers and grants in migrations 0001, 0003, 0004 |
+| §5 | Screens 1, 2, 3, 5 | Done | frontend pages |
+| §5 | Screen 4, cross-reference map | Pass 2 (§6) | — |
+| §6 | Attachments from the vault | **Done: Google Drive** (D27), verified on `oak_binder_test` | `services/google_drive.py`, `vault_login.py`, `vault_migrate.py` |
+| §7 | Sign-off as an authenticated action | Done: dev identity, or a trusted-proxy header (D24) | `identity.py`, `config.py` |
+| §2 / NFRA | Production of the complete file in one action, native formats | Done | produce-file archive |
 
-## 3. Test results (run 29 October 2026)
+## 3. Tests and checks (final run, 30 October 2026)
 
 | Check | Result |
 |---|---|
-| Backend suite against `oak_binder_test` | 141 passed, 1 skipped (the database-rebuild test, off by default), 0 failed |
-| Backend lint (ruff), format (ruff format), types (mypy strict) | pass, 57 source files |
-| Frontend unit tests (vitest) | 42 passed, 9 files, 0 failed |
+| Backend suite against `oak_binder_test` (231 collected) | **230 passed, 1 skipped** (database-rebuild test, off by default), 0 failed |
+| Backend format (ruff format), lint (ruff), types (mypy strict) | pass, 79 source files |
+| Frontend unit tests (vitest) | **48 passed**, 10 files |
 | TypeScript typecheck and production build | pass |
 
-Each spec §8 acceptance item that falls in Pass 1 has a named test; see §5 below.
+One test was corrected in this final pass: the migration dry-run test asserted over every
+attachment row in the shared test database and tripped on the migrated demo row; it now
+asserts over its own rows only.
 
-## 4. Demonstrated in the browser
+## 4. Browser verification (development servers, `oak_binder_test`)
 
-Against `oak_binder_test`, on binder ENG-2026-001 (evidence: the event table and version rows):
+Performed in the app's browser pane against the frontend on port 3001 and the backend on
+port 8001, the latter running in vault mode:
 
-- Binder list and creation; report date set, showing assembly due 2026-12-27 and retention
-  until 2033-10-28 (report date + 60 days, + 7 years).
-- Working paper creation for every required paper, markdown Read/Edit views, the full
-  sign-off chain, and the version history (C-1 reached version 10).
-- A CSV attachment uploaded with identifying characteristics, downloaded byte-identical,
-  and carried in the version body.
-- Assembly at 12:31 with a manifest and file hash; produce-file at 12:49 (32 members);
-  an amendment of C-1 with a reason at 12:59; re-assembly at 15:56 recording the previous
-  hash; produce-file again (36 members).
-- A stale-screen defect found during testing (buttons re-enabled before the reload) was
-  fixed across all screens with regression tests.
+- **Binders screen**: both demo binders listed; the New binder form shows the template
+  draft warning with its three placeholder findings. Created `BROWSER-CHECK-2026-10-30`
+  (statutory). Set the report date to 2026-10-30: assembly due 2026-12-29 with 60 days left,
+  retain until 2033-10-30.
+- **Binder screen**: six missing required papers shown per section as a blocking count;
+  "Create" beside C-1 prefilled the New working paper form; the paper was created.
+- **Working paper screen**: conclusion entered and saved; the sample CSV attached through
+  the API (the browser pane cannot pick files) appeared with its identifying characteristics
+  and hash; Prepare, Submit for review, Review and Sign off ran in order, writing versions 1,
+  2 and 3 with preparer, reviewer and signer and their timestamps; the status reads Signed
+  off · version 3. Review notes and cross-references sections present and empty.
+- **Assembly screen, new binder**: the five remaining missing papers named as blockers,
+  Assemble offered, the not-checked line for FS-line references, retention date, no events.
+- **Assembly screen, ENG-2026-001**: nothing blocks, manifest of six papers with the C-1
+  attachment, Verify hashes and Produce file (zip) offered, Access log section present.
+- **Review notes screen, ENG-2026-001**: no open notes, cleared notes available.
 
-Not demonstrated in the browser, by design: purge after the retention date. It is verified by
-an automated test with an injected date; no development clock override exists.
+Not done in the browser: attaching through the file picker (API used instead) and assembling
+the new binder (it lacks five required papers; assembly and production were verified on
+ENG-2026-001 through the API).
 
-## 5. Acceptance criteria (spec §8)
+## 5. Google Drive vault verification (`oak_binder_test` only)
 
-| # | Criterion | Status | Evidence |
-|---|---|---|---|
-| 1 | A paper without a conclusion cannot be signed off | **Satisfied** | service rule, database CHECK, screen; `test_sign_off_requires_a_conclusion` |
-| 2 | A paper with an open review note cannot be signed off | **Satisfied** | real notes (migration 0003); `test_open_note_blocks_sign_off_until_cleared`: raised, assigned and responded all block, cleared releases |
-| 3 | Assembly blocked by unsigned papers, open notes, broken references, missing required papers, each named | **Partly satisfied** | unsigned papers, open notes and missing papers: named, tested (`test_open_note_blocks_assembly_by_name`); broken references: reported as *not checked*, dependent on Pass 2 cross-reference data (D21) |
-| 4 | After assembly a delete fails and an edit creates a new version with a reason | **Satisfied** | `test_after_assembly_edits_need_a_reason_and_deletes_fail`; browser amendment at version 7 |
-| 5 | Manifest lists every paper with its hash; recomputing the file hash reproduces it | **Satisfied** | `test_assemble_freezes_the_file_with_a_manifest_and_hash`, `test_verify_reproduces_every_hash_and_detects_tampering` |
-| 6 | Produce-file returns the complete file in native formats plus the manifest, in one action | **Satisfied** | `test_produce_file_is_one_archive_with_native_files_manifest_and_trail`; two archives produced in the browser |
-| 7 | Retention date is report date + 7 years, and purge before it fails | **Satisfied** | database CHECK; `test_purge_is_refused_before_retention_and_recorded_after` |
-| 8 | A sampling paper generated by the Sampling module carries its formula and seed | **Not applicable to Pass 1** | generated papers are Pass 2 |
-| 9 | Every sign-off records user, timestamp and paper version | **Satisfied** | each sign-off step writes an immutable `wp_version` row with its actor and time |
+- Consent completed by the firm; the saved token's account owns the vault folder; the folder
+  id in `.env` was corrected from a two-character transcription error found by a
+  name-filtered lookup; `vault_login --check` reports the folder reachable and writable.
+- The one local attachment was migrated: uploaded once, verified on Drive's SHA-256 and on an
+  independent download; the local copy kept.
+- With `OAK_STORE=vault` on the development backend (worker restarted 21:16): 21 API checks
+  passed, including download with matching hash, verification of every recorded hash, a
+  produced archive that verifies with the Drive bytes inside, and purge refused before
+  retention and on an open binder with nothing changed.
+- The browser-check attachment uploaded through the running backend landed in the vault
+  folder, marked, locked, with Drive's SHA-256 equal to the recorded hash and to an
+  independent download.
+- Final state: 2 attachment rows, both in the vault folder, locked, hashes matching on
+  Drive, on download and in the database; the migrated one also matches its local copy. The
+  adapter made no list or search call. Nothing was deleted from Drive or disk.
 
-## 6. Unresolved items
+## 6. Remaining items, with owners
 
-**Pass 1 items that cannot be closed yet**
+**Chartered accountant / senior**
 
-1. **Broken-reference blocker** (§3E, §3F, §8.3). Reported as *not checked* on the Assembly
-   screen. A cross-reference can point at a paper, a Spine FS line or a vault document (§4);
-   papers are never deleted and a foreign key forbids a dangling paper id, so only references
-   to the Spine and to a vault can break, and neither exists. Dependent on Pass 2
-   cross-reference data (D21).
-2. **Vault integration** (§6 "attachments from the vault"). **Not completed because no vault
-   was found**: a read-only search on 29 October 2026 of this project, the Financial Spine
-   (`D:\CAF`), the OAK notes and every project document on `D:\` found no vault module, API
-   or credentials. Attachments are kept in a local write-once, content-addressed store
-   outside the web root, re-hashed on every read; `vault_doc_id` holds the store key, and
-   the store sits behind one interface so a vault can replace it without a schema change
-   (D7, D17).
+1. Index-template content: names for areas D–T, required papers per engagement type, SA
+   references. The spec supplies none; the files hold exactly what it names and are marked
+   draft. A draft list was sent to the senior on 30 October; no reply is recorded here.
+2. Confirmation of three stated interpretations: the access log's reading of "opened"
+   (D25), the cross-reference `direction` field (D26), and what "superseded paper" should
+   mean for broken-reference detection, since papers are never deleted here.
 
-**Closed since the first version of this report**
+**Firm, deployment**
 
-- **Review-note workflow** (§3D, §4, §5.3, §8.2, §8.3): built as migration 0003 and
-  verified; see stage 7 above and D21. The review-note stub no longer exists.
-- **Index-template structure** (§3A, §3B): the loader now refuses any file that lacks a
-  standard section, renames a spec-named section, or has repeated, blank or malformed
-  required papers; 28 tests. The content remains placeholder (see below).
+3. OAuth consent screen set to "In production" (a Testing-status refresh token expires after
+   seven days); custody of `backend\secrets`, which under the full `drive` scope reaches the
+   whole Google account; whether to keep the local attachment copies.
+4. The authenticating reverse proxy and identity provider, `OAK_TRUSTED_PROXIES`, TLS.
+5. Applying migrations 0001–0005 to the live `oak_binder` when going live. It has never been
+   touched: 0 tables.
 
-**Other open points, outside the Pass 1 definition**
+**Pass 2 (spec §6)**
 
-- Access log of who opened the file after assembly (§3H): spec §6 assigns it to neither pass;
-  not built; the `produced` event records exports. Needs a decision.
-- Index template content: section names and the six required papers come from the spec's
-  own words; the 17 areas D–T carry generic names, no template requires a paper in any
-  area, and the four templates share one required list. Marked draft for chartered
-  accountant review; the template API reports these placeholders. Not approved by anyone.
-- One development identity (`OAK_DEV_USER`): preparer, reviewer and signer are the same
-  person in a demo. Real authentication is a production-hardening decision (D8).
-- Configurable review levels beyond preparer and reviewer (§3D): Pass 2.
+6. Checking cross-references to FS lines, lead schedules per area, the cross-reference map
+   screen, generated papers, discussions and departures logs, configurable review levels,
+   WorkMind papers.
 
-## 7. Database and project safety
+## 7. Safety record
 
-- The live `oak_binder` database has **never been migrated or written**: 0 tables, confirmed
-  by read-only probe after every stage.
-- `oak_binder_test` is at migration 0003. Migrations 0001 and 0002 were never edited after
-  they were applied to a database holding data; Stage 6 changes went into 0002 and review
-  notes into 0003, both additive. Before 0002 was applied a `pg_dump` was taken
-  (`D:\oak_binder_test_before_stage6.dump`, 16,505 bytes, verified with `pg_restore --list`
-  and a row count of its data section); its validity was re-checked before 0003.
-- The test suite preserves what it finds: schema is only upgraded, every test runs in a
-  rolled-back transaction, engagement names carry random suffixes, attachment tests use a
-  temporary folder, and the destructive rebuild test runs only with `OAK_TEST_REBUILD=yes`.
-  Row counts were identical before and after every suite run (latest: 2 binders, 7 papers,
-  28 versions, 1 attachment, 5 events, 0 review notes).
-- **CAF (`D:\CAF`) was never modified**: its working tree showed 0 changes and the same HEAD
-  commit at every check. Its databases, roles and `.env` were never read for credentials or
-  connected to.
-- No password or `.env` value was printed or stored outside the git-ignored `backend\.env`.
+- Live `oak_binder`: 0 tables, no `alembic_version`, confirmed by read-only probe after the
+  final run. Every migration and every test ran against `oak_binder_test` only, and the
+  migration utility asserted the database name before writing.
+- `D:\CAF`: 0 changes, HEAD `d11246f` as at the start; never read for credentials.
+- No password, token or `.env` value was printed; the secrets folder is git-ignored and
+  untracked, proven by a test.
+- `oak_binder_test` holds the two demo binders, the browser-check binder created today, and
+  the rows written by browser use; the test suite's own rows are rolled back.
 
-## 8. Not yet done, administratively
+## 8. Commit
 
-- Nothing is committed: the repository on branch `main` holds all Stage 1–6 work as
-  untracked files. A first commit is the next administrative step.
-- No browser end-to-end test suite exists; screens are unit-tested with a mocked API, and
-  the API is tested against the real database.
+This revision is committed on `main` together with the Pass 1 completion work (the hash is
+in `git log`). Nothing is pushed.

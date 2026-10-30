@@ -72,30 +72,48 @@ def test_driver_host_and_port_are_required(dev: MakeSettings) -> None:
 
 
 def test_production_refuses_dev_user(dev: MakeSettings) -> None:
-    assert dev(env="production", dev_user=None).env == "production"
+    production = dict(env="production", dev_user=None, auth="header", trusted_proxies="10.0.0.5")
+    assert dev(**production).env == "production"
     with pytest.raises(ValidationError, match="OAK_DEV_USER must not be set"):
-        dev(env="production", dev_user="dev@localhost")
+        dev(**{**production, "dev_user": "dev@localhost"})
 
 
 def test_store_defaults_to_local_and_vault_needs_its_settings(dev: MakeSettings) -> None:
     assert dev().store == "local"
     with pytest.raises(
         ValidationError,
-        match="OAK_STORE=vault needs OAK_VAULT_URL, OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER",
+        match=(
+            "OAK_STORE=vault needs OAK_VAULT_URL, OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER, "
+            "OAK_VAULT_CLIENT_FILE"
+        ),
     ):
         dev(store="vault")
-    with pytest.raises(ValidationError, match="needs OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER"):
+    with pytest.raises(
+        ValidationError,
+        match="needs OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER, OAK_VAULT_CLIENT_FILE",
+    ):
         dev(store="vault", vault_url="https://vault.example.test")
     # A blank value counts as missing.
-    with pytest.raises(ValidationError, match="needs OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER"):
+    with pytest.raises(
+        ValidationError,
+        match="needs OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER, OAK_VAULT_CLIENT_FILE",
+    ):
         dev(store="vault", vault_url="https://vault.example.test", vault_credential="  ")
-    with pytest.raises(ValidationError, match="needs OAK_VAULT_CONTAINER"):
+    with pytest.raises(ValidationError, match="needs OAK_VAULT_CONTAINER, OAK_VAULT_CLIENT_FILE"):
         dev(store="vault", vault_url="https://vault.example.test", vault_credential="x")
+    with pytest.raises(ValidationError, match="needs OAK_VAULT_CLIENT_FILE"):
+        dev(
+            store="vault",
+            vault_url="https://vault.example.test",
+            vault_credential="x",
+            vault_container="c",
+        )
     complete = dev(
         store="vault",
         vault_url="https://vault.example.test",
         vault_credential="x",
         vault_container="c",
+        vault_client_file="secrets/client.json",
     )
     assert complete.store == "vault"
     with pytest.raises(ValidationError, match="Input should be 'local' or 'vault'"):
@@ -104,4 +122,10 @@ def test_store_defaults_to_local_and_vault_needs_its_settings(dev: MakeSettings)
 
 def test_production_refuses_test_database(dev: MakeSettings) -> None:
     with pytest.raises(ValidationError, match="must name oak_binder when OAK_ENV=production"):
-        dev(env="production", dev_user=None, database_url=BINDER_TEST)
+        dev(
+            env="production",
+            dev_user=None,
+            auth="header",
+            trusted_proxies="10.0.0.5",
+            database_url=BINDER_TEST,
+        )

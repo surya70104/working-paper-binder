@@ -12,6 +12,8 @@ dependencies = [
   "sqlalchemy>=2.0.30",
   "alembic>=1.13",
   "psycopg[binary]>=3.2",
+  # The Google Drive vault adapter talks to the Drive REST API directly (D27).
+  "httpx>=0.27",
 ]
 # Hashing (spec 3F, 8.5) uses hashlib and the produce-file archive (spec 3G, 8.6) uses
 # zipfile, both from the standard library. No extra dependency for either.

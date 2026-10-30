@@ -87,6 +87,23 @@ export function BindersPage() {
               )}
             </select>
           </label>
+          {(() => {
+            const chosen = templates.find((t) => t.name === template);
+            if (!chosen || !chosen.draft) return null;
+            return (
+              <div
+                className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                data-testid="template-draft"
+              >
+                <p className="font-medium">This index template is a draft: {chosen.status}</p>
+                <ul className="mt-1 list-disc pl-4">
+                  {chosen.placeholders.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
           <label className="grid gap-1 text-sm">
             Report date (optional; starts the 60-day and 7-year clocks)
             <input

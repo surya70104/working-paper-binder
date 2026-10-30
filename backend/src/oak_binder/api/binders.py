@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
 
-from oak_binder.api.deps import DbSession, Today
+from oak_binder.api.deps import DbSession, Now, Today
 from oak_binder.schemas.binders import BinderCreate, BinderOut, BinderPatch, BinderSummary
 from oak_binder.schemas.papers import PaperCreate, PaperOut
-from oak_binder.services import binders, papers
+from oak_binder.services import access, binders, papers
 
 router = APIRouter(prefix="/api/binders", tags=["binders"])
 
@@ -34,7 +34,11 @@ def create_binder(payload: BinderCreate, session: DbSession, today: Today) -> Bi
 
 
 @router.get("/{binder_id}")
-def get_binder(binder_id: uuid.UUID, session: DbSession, today: Today) -> BinderOut:
+def get_binder(
+    binder_id: uuid.UUID, request: Request, session: DbSession, today: Today, now: Now
+) -> BinderOut:
+    binder = binders.get_binder(session, binder_id)
+    access.record(session, binder, access.reader(request, binder), "binder", now)
     return _out(session, binder_id, today)
 
 

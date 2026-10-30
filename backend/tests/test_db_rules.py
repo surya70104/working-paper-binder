@@ -111,14 +111,15 @@ def test_wp_version_delete_is_refused(db: Connection) -> None:
 
 def test_wp_version_truncate_is_refused(db: Connection) -> None:
     new_version(db, new_wp(db, new_binder(db)))
-    # wp_attachment and wp (current_version) reference wp_version, so PostgreSQL refuses
-    # "TRUNCATE wp_version" alone before any trigger runs. Truncating all three in one
-    # statement passes that check and reaches the append-only trigger, which is the point.
+    # wp_attachment and wp (current_version) reference wp_version, and review_note and xref
+    # reference wp, so PostgreSQL refuses "TRUNCATE wp_version" alone before any trigger
+    # runs. Truncating them together passes that check and reaches the append-only trigger,
+    # which is the point.
     with (
         pytest.raises(IntegrityError, match="wp_version is append-only: TRUNCATE"),
         db.begin_nested(),
     ):
-        db.execute(text("TRUNCATE wp_version, wp_attachment, review_note, wp"))
+        db.execute(text("TRUNCATE wp_version, wp_attachment, review_note, xref, wp"))
 
 
 def test_a_second_version_can_still_be_appended(db: Connection) -> None:

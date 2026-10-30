@@ -61,10 +61,15 @@ def set_report_date(session: Session, binder: Binder, report_date: date | None) 
 
 
 def require_open(binder: Binder) -> None:
+    if binder.state == BinderState.PURGED:
+        raise Conflict(
+            f"binder for {binder.engagement!r} was purged after retention; "
+            "its content is gone and nothing can be changed"
+        )
     if binder.state != BinderState.OPEN:
         raise Conflict(
-            f"binder for {binder.engagement!r} is assembled; post-assembly changes need an "
-            "amendment with a reason (spec 3F), which arrives with the assembly stage"
+            f"binder for {binder.engagement!r} is assembled; a post-assembly change is an "
+            "amendment and needs a reason (spec 3F)"
         )
 
 
@@ -104,12 +109,15 @@ def build_index(session: Session, binder: Binder) -> BinderIndex:
     by_section: dict[str, SectionIndex] = {
         s.code: SectionIndex(s.code, s.name) for s in template.sections
     }
-    present = {p.ref for p in papers}
+    # A required paper counts as present only at its reference in its section (spec 3A:
+    # "missing, per section"); a paper filed under the right reference in another section
+    # still leaves the requirement open.
+    present = {(p.ref, p.section) for p in papers}
     for paper in papers:
         by_section.setdefault(
             paper.section, SectionIndex(paper.section, f"Section {paper.section}")
         ).papers.append(paper)
     for required in template.required:
-        if required.ref not in present:
+        if (required.ref, required.section) not in present:
             by_section[required.section].missing.append(required)
     return BinderIndex(template, list(by_section.values()))

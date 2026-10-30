@@ -88,6 +88,16 @@ def test_content_validation(api: TestClient) -> None:
     assert lower.json()["sa_refs"] == ["SA 500"]
 
 
+def test_an_amendment_reason_is_refused_on_an_open_binder(api: TestClient) -> None:
+    paper = new_paper(api)
+    refused = api.patch(
+        f"/api/papers/{paper['id']}", json={"conclusion": "x", "amendment_reason": "why"}
+    )
+    assert refused.status_code == 422
+    assert "applies to an assembled binder only" in refused.json()["detail"]
+    assert api.get(f"/api/papers/{paper['id']}").json()["conclusion"] == PAPER["conclusion"]
+
+
 def test_edit_changes_fields_and_unknown_paper_is_404(api: TestClient) -> None:
     paper = new_paper(api)
     edited = api.patch(f"/api/papers/{paper['id']}", json={"title": "Cash", "result": None})

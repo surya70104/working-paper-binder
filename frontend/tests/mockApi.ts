@@ -67,6 +67,7 @@ export function paperFixture(overrides: Partial<Paper> = {}): Paper {
     open_review_notes: 0,
     versions: [],
     attachments: [],
+    xrefs: [],
     ...overrides,
   };
 }
@@ -106,10 +107,11 @@ export function assemblyFixture(overrides: Partial<AssemblyStatus> = {}): Assemb
       { kind: "unsigned_paper", ref: "C-1", detail: "status is in_review" },
     ],
     not_checked: [
-      "broken cross-references: cross-references are Pass 2 (D21); references to Spine lines and vault documents do not exist yet, so none can be checked",
+      "cross-references to FS lines: the Financial Spine is not part of this product (D21), so a reference to a Spine line cannot be followed; references to papers and documents are checked (none in this file)",
     ],
     manifest: null,
     events: [],
+    access: [],
     ...overrides,
   };
 }

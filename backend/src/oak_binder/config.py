@@ -8,6 +8,7 @@ production refuses a development identity (D8).
 
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
 from typing import Literal
 
@@ -57,16 +58,33 @@ class Settings(BaseSettings):
     migration_database_url: str | None = None
     test_database_url: str | None = None
     test_app_database_url: str | None = None
+    # Who is acting (spec 7: sign-off is an authenticated action; D8, D24).
+    #   dev     the fixed identity in OAK_DEV_USER; development and tests only
+    #   header  the identity an authenticating reverse proxy places in OAK_AUTH_HEADER on
+    #           every request, after it has signed the user in; the Binder trusts that
+    #           header and verifies nothing itself, so the proxy must strip any copy a client
+    #           sends and must be the only route to the API
+    auth: Literal["dev", "header"] = "dev"
+    auth_header: str = "X-Authenticated-User"
+    # In header mode, the only addresses whose identity header is believed: the proxy's,
+    # as a comma-separated list of IPs or networks (10.0.0.5, 10.0.0.0/24, ::1). Empty
+    # means any peer, which production refuses.
+    trusted_proxies: str = ""
     dev_user: str | None = None
     attachments_dir: Path = Path("../var/attachments")
     max_upload_bytes: int = 26_214_400
-    # Where attachment bytes live (D23). "local" is the write-once directory above; "vault"
-    # is reserved for the firm's document vault once it is confirmed. The three vault
-    # settings are generic names, not a product: an adapter will read them.
+    # Where attachment bytes live (D23, D27). "local" is the write-once directory above and
+    # the default. "vault" is the firm's Google Drive folder:
+    #   OAK_VAULT_URL          the Drive API base, https://www.googleapis.com/drive/v3
+    #   OAK_VAULT_CONTAINER    the vault folder's id
+    #   OAK_VAULT_CREDENTIAL   path of the refresh-token file vault_login writes
+    #   OAK_VAULT_CLIENT_FILE  path of the Desktop OAuth client JSON
+    # Both files live under the git-ignored backend/secrets and are never printed.
     store: Literal["local", "vault"] = "local"
     vault_url: str | None = None
     vault_credential: str | None = None
     vault_container: str | None = None
+    vault_client_file: str | None = None
 
     @field_validator("database_url", "migration_database_url")
     @classmethod
@@ -94,14 +112,36 @@ class Settings(BaseSettings):
                 ("OAK_VAULT_URL", self.vault_url),
                 ("OAK_VAULT_CREDENTIAL", self.vault_credential),
                 ("OAK_VAULT_CONTAINER", self.vault_container),
+                ("OAK_VAULT_CLIENT_FILE", self.vault_client_file),
             )
             if not (value or "").strip()
         ]
         if missing:
             raise ValueError(
                 f"OAK_STORE=vault needs {', '.join(missing)}; "
-                "set them, or use OAK_STORE=local (architecture D23)"
+                "set them, or use OAK_STORE=local (architecture D23, D27)"
             )
+        return self
+
+    def trusted_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        return [
+            ipaddress.ip_network(part.strip(), strict=False)
+            for part in self.trusted_proxies.split(",")
+            if part.strip()
+        ]
+
+    @model_validator(mode="after")
+    def _auth_guard(self) -> Settings:
+        # dev mode without OAK_DEV_USER is allowed outside production: the identity
+        # dependency answers 503 until it is set.
+        if self.auth == "header" and not self.auth_header.strip():
+            raise ValueError("OAK_AUTH=header needs OAK_AUTH_HEADER, the header the proxy sets")
+        try:
+            self.trusted_networks()
+        except ValueError as exc:
+            raise ValueError(
+                "OAK_TRUSTED_PROXIES must be a comma-separated list of IP addresses or networks"
+            ) from exc
         return self
 
     @model_validator(mode="after")
@@ -112,6 +152,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OAK_DEV_USER must not be set when OAK_ENV=production: "
                 "sign-off needs real authentication (architecture D8)"
+            )
+        if self.auth == "dev":
+            raise ValueError(
+                "OAK_AUTH=dev is not allowed when OAK_ENV=production: set OAK_AUTH=header "
+                "behind an authenticating proxy (architecture D24)"
+            )
+        if not self.trusted_networks():
+            raise ValueError(
+                "OAK_TRUSTED_PROXIES must list the proxy's address(es) when OAK_ENV=production: "
+                "otherwise anyone who can reach the API can name themselves (architecture D24)"
             )
         if make_url(self.database_url).database != APP_DATABASE:
             raise ValueError(f"OAK_DATABASE_URL must name {APP_DATABASE} when OAK_ENV=production")

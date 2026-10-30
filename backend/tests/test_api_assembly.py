@@ -54,8 +54,9 @@ def test_assembly_is_blocked_by_named_items(api: TestClient) -> None:
         assert ("missing_required_paper", ref) in kinds
     assert ("missing_required_paper", "C-1") not in kinds  # it exists, but is unsigned
     assert ("unsigned_paper", "C-1") in kinds
-    assert any("Pass 2" in n for n in status["not_checked"])
-    assert len(status["not_checked"]) == 1  # broken cross-references; notes are now checked
+    # Only FS-line references stay unchecked (no Spine, D21); notes and paper or document
+    # references are checked.
+    assert len(status["not_checked"]) == 1 and "FS lines" in status["not_checked"][0]
 
     refused = api.post(f"/api/binders/{binder['id']}/assemble")
     assert refused.status_code == 409
@@ -426,3 +427,12 @@ def test_purge_is_refused_before_retention_and_recorded_after(api: TestClient) -
     assert api.get(f"/api/binders/{binder['id']}/produce").status_code == 409
     assert api.post(f"/api/binders/{binder['id']}/purge").status_code == 409
     assert api.post(f"/api/papers/{c1['id']}/prepare").status_code == 409
+    # Every change names the real state: purged, not assembled.
+    edit = api.patch(f"/api/papers/{c1['id']}", json={"conclusion": "late"})
+    assert edit.status_code == 409 and "was purged after retention" in edit.json()["detail"]
+    new = api.post(
+        f"/api/binders/{binder['id']}/papers", json={"ref": "D-9", "section": "D", "title": "x"}
+    )
+    assert new.status_code == 409 and "was purged" in new.json()["detail"]
+    note = api.post(f"/api/papers/{c1['id']}/review-notes", json={"text": "late"})
+    assert note.status_code == 409 and "purged" in note.json()["detail"]

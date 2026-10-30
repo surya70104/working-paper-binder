@@ -10,9 +10,9 @@ Two ideas are kept apart on every row:
 Stores implement ``AttachmentStore``: put, read, exists, delete. ``LocalAttachmentStore`` is
 the write-once, content-addressed directory under OAK_ATTACHMENTS_DIR, outside anything a
 web server serves. ``InMemoryVaultStore`` behaves like a vault (opaque ids, no
-content-addressing) and exists for the storage contract tests. There is no real vault
-adapter: none has been identified (D16, D23). ``build_store`` picks the store from
-OAK_STORE and refuses a vault selection until an adapter exists.
+content-addressing) and exists for the storage contract tests. The real vault is the
+firm's Google Drive folder, ``services.google_drive.GoogleDriveStore`` (D27).
+``build_store`` picks the store from OAK_STORE; local is the default.
 """
 
 from __future__ import annotations
@@ -139,10 +139,11 @@ def build_store(settings: Settings) -> AttachmentStore:
     directory, which is backend\\ when run as the README says."""
     if settings.store == "local":
         return LocalAttachmentStore(settings.attachments_dir.resolve())
-    raise NotImplementedError(
-        "OAK_STORE=vault is configured but no vault adapter exists yet: the vault product, "
-        "its API and its authentication are unconfirmed (architecture D23). Use OAK_STORE=local."
-    )
+    # The firm's vault is a Google Drive folder (D27). Imported here so the local store
+    # never depends on the HTTP client.
+    from oak_binder.services.google_drive import GoogleDriveStore
+
+    return GoogleDriveStore.from_settings(settings)
 
 
 def verified_read(store: AttachmentStore, attachment: WpAttachment) -> bytes:

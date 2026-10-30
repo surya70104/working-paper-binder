@@ -6,7 +6,7 @@ builds the engine but opens no connection; the first request that needs the data
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 
 from oak_binder import __version__
 from oak_binder.api import router
@@ -27,6 +27,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.attachment_store = build_store(resolved)
     install_error_handlers(app)
     app.include_router(router)
+
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+        # Audit-file content is never to be cached by an intermediary or guessed at by a
+        # browser; every response says so (D24).
+        response: Response = await call_next(request)
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

@@ -49,12 +49,42 @@ export type Attachment = {
   media_type: string;
   size_bytes: number;
   sha256: string;
+  vault_doc_id: string;
   identifying_chars: string | null;
   attached_by: string;
   attached_at: string;
 };
 
 export type BinderState = "open" | "assembled" | "purged";
+
+// Spec 3B, 3E, 4: xref · from_wp · to_wp | to_fs_line | to_vault_doc · direction, read from one
+// paper: `outgoing` says whether that paper refers out. `broken` names a target that is gone;
+// `checked` is false for an FS line, which cannot be followed without the Spine (D21).
+export type Xref = {
+  id: string;
+  from_wp: string;
+  from_ref: string;
+  to_wp: string | null;
+  to_ref: string | null;
+  to_fs_line: string | null;
+  to_vault_doc: string | null;
+  to_filename: string | null;
+  to_attachment_id: string | null;
+  to_attachment_ref: string | null;
+  direction: "to" | "from";
+  outgoing: boolean;
+  created_by: string;
+  created_at: string;
+  broken: string | null;
+  checked: boolean;
+};
+
+export type XrefCreate = {
+  to_wp: string | null;
+  to_fs_line: string | null;
+  to_vault_doc: string | null;
+  direction: "to" | "from";
+};
 
 export type Paper = PaperSummary & {
   binder_id: string;
@@ -69,6 +99,7 @@ export type Paper = PaperSummary & {
   created_at: string;
   versions: Version[];
   attachments: Attachment[];
+  xrefs: Xref[];
 };
 
 export type NoteState = "raised" | "assigned" | "responded" | "cleared";
@@ -111,6 +142,9 @@ export type BinderEvent = {
   details: Record<string, unknown>;
 };
 
+// Spec 3H: who opened the file after assembly. Empty for an open binder.
+export type AccessEntry = { user: string; action: string; at: string };
+
 export type AssemblyStatus = {
   state: BinderState;
   report_date: string | null;
@@ -125,6 +159,7 @@ export type AssemblyStatus = {
   not_checked: string[];
   manifest: { papers: { ref: string; title: string; version: number | null; content_hash: string | null; attachments: { filename: string; sha256: string }[] }[] } | null;
   events: BinderEvent[];
+  access: AccessEntry[];
 };
 
 export type Verification = {
@@ -246,6 +281,8 @@ export const api = {
     return request<Paper>("POST", `/api/papers/${paperId}/attachments`, form);
   },
   removeAttachment: (id: string) => request<null>("DELETE", `/api/attachments/${id}`),
+  addXref: (paperId: string, body: XrefCreate) => request<Paper>("POST", `/api/papers/${paperId}/xrefs`, body),
+  removeXref: (id: string) => request<null>("DELETE", `/api/xrefs/${id}`),
   attachmentUrl: (id: string) => `/api/attachments/${id}/content`,
   getAssembly: (binderId: string) => request<AssemblyStatus>("GET", `/api/binders/${binderId}/assembly`),
   assemble: (binderId: string) => request<AssemblyStatus>("POST", `/api/binders/${binderId}/assemble`),
@@ -276,6 +313,7 @@ export const BLOCKER_LABEL: Record<string, string> = {
   missing_required_paper: "Missing required paper",
   unsigned_paper: "Paper not signed off",
   open_review_notes: "Open review notes",
+  broken_reference: "Broken cross-reference",
 };
 
 export const STATUS_LABEL: Record<Status, string> = {

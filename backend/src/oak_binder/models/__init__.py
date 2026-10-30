@@ -6,17 +6,21 @@ on that. Remaining Pass 2 tables (xref, discussion, departure) and the unassigne
 access_log arrive with their features.
 """
 
+from oak_binder.models.access import AccessLog
 from oak_binder.models.binder import Binder
 from oak_binder.models.enums import SECTIONS, BinderState, EventKind, Template, WpStatus
 from oak_binder.models.event import BinderEvent
 from oak_binder.models.review_note import NoteState, ReviewNote
 from oak_binder.models.wp import Wp, WpAttachment, WpVersion
+from oak_binder.models.xref import Direction, Xref
 
 __all__ = [
     "SECTIONS",
+    "AccessLog",
     "Binder",
     "BinderEvent",
     "BinderState",
+    "Direction",
     "EventKind",
     "NoteState",
     "ReviewNote",
@@ -25,4 +29,5 @@ __all__ = [
     "WpAttachment",
     "WpStatus",
     "WpVersion",
+    "Xref",
 ]

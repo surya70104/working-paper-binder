@@ -159,7 +159,7 @@ def test_open_note_blocks_assembly_by_name(api: TestClient) -> None:
     binder = complete_binder(api)
     status = api.get(f"/api/binders/{binder['id']}/assembly").json()
     assert status["blockers"] == []
-    assert len(status["not_checked"]) == 1 and "broken cross-references" in status["not_checked"][0]
+    assert len(status["not_checked"]) == 1 and "FS lines" in status["not_checked"][0]
     assert not any("review note" in n for n in status["not_checked"])
 
     c1 = next(p for s in binder["sections"] for p in s["papers"] if p["ref"] == "C-1")
@@ -201,6 +201,34 @@ def test_binder_note_list_says_what_is_open_and_what_it_blocks(api: TestClient) 
         ("D-2", "Receivables", "cleared", False, REVIEWER),
     ]
     assert listed[0]["paper_status"] == "draft"
+
+
+def test_no_note_step_can_be_taken_on_a_purged_binder(api: TestClient) -> None:
+    from datetime import date
+    from typing import cast
+
+    from fastapi import FastAPI
+
+    from oak_binder.api import deps
+
+    binder = complete_binder(api, report_date="2026-09-30")
+    detail = api.get(f"/api/binders/{binder['id']}").json()
+    c1 = next(p for s in detail["sections"] for p in s["papers"] if p["ref"] == "C-1")
+    act_as(api, REVIEWER)
+    note = raise_note(api, c1["id"], "Late point")  # raised before assembly...
+    move(api, note["note_id"], "assign", {"assigned_to": PREPARER})
+    move(api, note["note_id"], "respond", {"text": "done"})
+    move(api, note["note_id"], "clear")
+    api.post(f"/api/binders/{binder['id']}/assemble").raise_for_status()
+    second = raise_note(api, c1["id"], "Post-assembly point")  # ...and one left open
+    move(api, second["note_id"], "assign", {"assigned_to": PREPARER})
+    cast(FastAPI, api.app).dependency_overrides[deps.today] = lambda: date(2033, 9, 30)
+    act_as(api, PARTNER)
+    api.post(f"/api/binders/{binder['id']}/purge").raise_for_status()
+    refused = move(api, second["note_id"], "respond", {"text": "too late"}, 409)
+    assert "purged" in refused["detail"]
+    assert "purged" in move(api, second["note_id"], "clear", None, 409)["detail"]
+    assert api.get(f"/api/review-notes/{second['note_id']}").json()["state"] == "assigned"
 
 
 def test_notes_survive_sign_off_and_reopen_on_a_new_note(api: TestClient) -> None:

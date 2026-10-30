@@ -125,6 +125,7 @@ test("attachments are listed with hash and download link, and can be removed bef
     media_type: "application/pdf",
     size_bytes: 1234,
     sha256: "9".repeat(64),
+    vault_doc_id: "9".repeat(64),
     identifying_chars: "HDFC a/c 1234",
     attached_by: "preparer@firm",
     attached_at: "2026-10-28T10:00:00Z",

@@ -30,7 +30,7 @@ test("blockers are named and Assemble is disabled while anything blocks", async 
   const blockers = screen.getByTestId("blockers");
   expect(blockers).toHaveTextContent("Missing required paper A-1: Acceptance and continuance");
   expect(blockers).toHaveTextContent("Paper not signed off C-1: status is in_review");
-  expect(screen.getByText(/broken cross-references: cross-references are Pass 2/)).toBeInTheDocument();
+  expect(screen.getByText(/cross-references to FS lines: the Financial Spine is not part of this product/)).toBeInTheDocument();
   expect(screen.queryByText(/open review notes: review notes are Pass 2/)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Assemble" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Purge content" })).toBeDisabled();
@@ -64,6 +64,30 @@ test("an assembled file shows its manifest, hash, verification and produce link"
   fireEvent.click(screen.getByRole("button", { name: "Verify hashes" }));
   await waitFor(() => expect(screen.getByTestId("verification")).toHaveTextContent("Every recorded hash reproduces."));
   expect(calls.some((c) => c.path === "/api/binders/b1/verify")).toBe(true);
+});
+
+test("an open binder shows no access log; an assembled one lists who opened it", async () => {
+  mockApi({ "GET /api/binders/b1/assembly": assemblyFixture() });
+  const open = render(<AssemblyPage id="b1" />);
+  await screen.findByRole("heading", { name: /Assembly/ });
+  expect(screen.queryByRole("heading", { name: "Access log" })).not.toBeInTheDocument();
+  open.unmount();
+
+  mockApi({
+    "GET /api/binders/b1/assembly": {
+      ...assembled,
+      access: [
+        { user: "partner@firm", action: "binder", at: "2026-11-02T09:00:00Z" },
+        { user: "nfra.inspector", action: "attachment benchmark.csv of C-1", at: "2026-11-03T11:30:00Z" },
+      ],
+    },
+  });
+  render(<AssemblyPage id="b1" />);
+  await screen.findByRole("heading", { name: "Access log" });
+  const rows = screen.getAllByTestId("access");
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toHaveTextContent("partner@firm · binder · 2026-11-02T09:00:00Z");
+  expect(rows[1]).toHaveTextContent("nfra.inspector · attachment benchmark.csv of C-1");
 });
 
 test("purge needs retention to have expired and a confirmation", async () => {

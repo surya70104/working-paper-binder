@@ -16,6 +16,8 @@ class AttachmentOut(BaseModel):
     media_type: str
     size_bytes: int
     sha256: str
+    # The store's id for the bytes (spec 4: vault_doc_id); what a cross-reference names.
+    vault_doc_id: str
     identifying_chars: str | None
     attached_by: str
     attached_at: datetime

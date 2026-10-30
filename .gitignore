@@ -49,3 +49,7 @@ desktop.ini
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Google Drive OAuth credentials
+backend/secrets/
+

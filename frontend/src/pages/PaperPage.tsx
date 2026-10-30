@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, NEXT_ACTION, STATUS_LABEL, type Paper, type PaperContent, type ReviewNote } from "../api";
+import { CrossReferences } from "../components/CrossReferences";
 import { ReviewNotes } from "../components/ReviewNotes";
 import { Markdown } from "../markdown";
 import { href } from "../router";
@@ -393,6 +394,16 @@ export function PaperPage({ id }: { id: string }) {
           </form>
         )}
       </section>
+
+      <CrossReferences
+        paperId={id}
+        binderId={paper.binder_id}
+        xrefs={paper.xrefs}
+        attachments={paper.attachments}
+        busy={busy}
+        run={run}
+        canEdit={!assembled && !purged}
+      />
 
       <section>
         <h2 className="text-lg font-semibold">Versions</h2>

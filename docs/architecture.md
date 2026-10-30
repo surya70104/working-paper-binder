@@ -170,14 +170,14 @@ Recorded so that the code, the README and the status report say the same thing.
 |---|---|---|---|
 | An open review note blocks sign-off | 3D, 8.2 | Done (D21, migration 0003) | — |
 | Review levels preparer → senior → manager → partner → EQR, configurable per engagement | 3D | Pass 2 | A per-binder levels list and a sign-off record per level. Pass 1 has the two sign-offs spec 6 names plus the final lock. |
-| Required papers per engagement type, and the names of areas D–T | 3A | Production hardening | Chartered accountant review of the four template files; the mechanism is complete. |
-| Real authentication; distinct preparer and reviewer identities | 7, D8 | Production hardening | An authentication decision. One replaceable function. |
+| Required papers per engagement type, and the names of areas D–T | 3A | Production hardening: the specification carries no names for D–T and no per-type lists, so nothing more can be filled from it (re-checked 30 Oct 2026) | Chartered accountant review of the four template files; the mechanism is complete and reports the placeholders. |
+| Real authentication; distinct preparer and reviewer identities | 7, D8 | Done (D24): `OAK_AUTH=header` trusts an authenticating proxy; production refuses `dev` | The firm's choice of proxy or identity provider; nothing in the Binder depends on it. |
 | Markdown rendering of paper fields | 7 | Done (Stage 5 follow-up) | `marked` renders, `DOMPurify` sanitises every fragment before it reaches the DOM; tests cover rendering and neutralised script, handlers, `javascript:` links, frames, forms and styles. |
 | Lead schedules tying to the Spine, with papers beneath them | 3A, 3C | Pass 2 | The Spine integration. |
 | Attachments, assembly, manifest, retention, produce-file | 3B, 3F, 3G, 8.3–8.7 | Done in Stage 6 (D17–D20) | — |
-| Attachments "from the vault" | 6 | Blocked: no vault exists | A search on 29 Oct 2026 of this project, `D:\CAF`, the OAK notes and every project document found no vault module, API or credentials. The local write-once store (D7, D17) stands in, behind one interface. |
-| Broken-reference blocker on assembly | 3E, 3F, 8.3 | Pass 2 (D21) | The `xref` table, the Spine link and a document store. Shown as *not checked* on the Assembly screen. |
-| Access log: who opened the file after assembly | 3H, 4 | Unassigned: spec 6 lists it in neither pass | A decision. Not built; the `produced` event records exports only. |
+| Attachments "from the vault" | 6 | Done (D27): Google Drive adapter behind the D23 protocol; vault mode off until the consent, folder check and migration have run | The firm's one-time consent and the consent screen's production status. |
+| Broken-reference blocker on assembly | 3E, 3F, 8.3 | Done where the data allows (D26, migration 0005): paper and document targets are checked and a broken one blocks by name; FS-line targets are *not checked* until the Spine exists | The Spine, for FS lines. |
+| Access log: who opened the file after assembly | 3H, 4 | Done (D25, migration 0004) | — |
 
 ## D17 · Stage 6: attachments, assembly, amendments — 29 Oct 2026
 
@@ -274,7 +274,8 @@ Spine and at a vault, neither of which exists. Building the `xref` table now wou
 blocker that is structurally unable to detect anything. It arrives with Pass 2.
 
 Acceptance 8.2 is therefore satisfied; 8.3 is satisfied for unsigned papers, open notes and
-missing papers, and deferred for broken references.
+missing papers, and deferred for broken references. (Superseded in part by D26, which builds
+`xref` and checks paper and document targets; FS-line targets remain unchecked.)
 
 ## D22 · Produce-file hardening — 30 Oct 2026
 
@@ -331,6 +332,164 @@ schema change, attachment storage now sits behind a four-method protocol in
   fetch bytes by id, confirm existence, delete after retention. Nothing else in the Binder
   changes. The storage contract tests in `tests\test_storage.py` run against the local store
   and the stand-in; they are the acceptance tests for the adapter.
+
+## D24 · Identity from an authenticating proxy — 30 Oct 2026
+
+Spec 7 asks for authenticated actions; spec 6 names no identity provider, and inventing one
+(a user table, passwords, sessions) would be requirements the spec does not contain. The
+Binder therefore takes its identity from an **authenticating reverse proxy**, the
+identity-aware-proxy pattern: the proxy signs the user in with whatever the firm already
+uses and places the identity in one request header. `OAK_AUTH` selects the source:
+
+- `dev`: the fixed identity in `OAK_DEV_USER` (D8). For development and tests. Refused in
+  production by the settings guard, as `OAK_DEV_USER` already was.
+- `header`: the value of `OAK_AUTH_HEADER` (default `X-Authenticated-User`), trimmed. Without
+  it, any action that records a person, and any read of an assembled file (D25), is refused
+  with 401 rather than recorded under an empty name.
+
+The Binder verifies nothing about the person itself. One module, `identity.py`, is the whole
+mechanism, so a different scheme later replaces one module. Tests cover both modes, trimming,
+the 401, the 503 in dev mode without a user, and the production guard.
+
+**Hardening, same day (security review).** A header is only as trustworthy as its route in,
+so header mode now checks the route, not just the value:
+
+- `OAK_TRUSTED_PROXIES`: the header is believed only when the request's peer address is in
+  this list of IPs or networks. Empty means any peer, for development; production refuses
+  an empty list, because an API reachable directly would let anyone name themselves. The
+  peer is the socket address, never a forwarded header: uvicorn runs without
+  `--proxy-headers`, and the proxy must be the peer.
+- The header must appear exactly once. A proxy that appends instead of replacing would
+  leave a client-sent copy in front of its own; two copies are refused.
+- The value must be a plausible name: non-blank, at most 254 characters, no control or
+  non-space whitespace characters.
+- Every response carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`, so audit-file content is neither cached by an intermediary
+  nor type-guessed by a browser, whatever the route.
+- The optional identity on a read of an open binder goes through the same checks
+  (`optional_user`), so a spoofed header never reaches the access log by that route either.
+
+Still the firm's: TLS termination and the proxy's own authentication, which no application
+setting can supply.
+
+## D25 · Access log: every read of an assembled file — 30 Oct 2026
+
+Spec 3H and 4 define `access_log · binder · user · action · at`, post-assembly only, as an
+SA 230 requirement; spec 6 schedules it in neither pass. With Pass 1 otherwise complete it is
+built now, as migration 0004, additive and append-only like `wp_version` (trigger plus
+SELECT/INSERT-only grants). Interpretations, stated rather than assumed:
+
+- **"Opened" means any read of the file's content** once the binder is assembled or purged:
+  the binder (`binder`), a paper (`paper <ref>`), its versions (`versions of <ref>`), its
+  review notes (`review notes of <ref>`, `review note of <ref>`), its cross-references
+  (`cross-references of <ref>`), an attachment's details or bytes
+  (`attachment <name> of <ref> (details)`, `attachment <name> of <ref>`), the binder's review
+  notes (`review notes`), the assembly status (`assembly status`), a verification (`verify`),
+  a production (`produce`). The `action` column carries that label. The binder list is an
+  index of engagements, not the file, and is not logged. Reads of an open binder are
+  ordinary work and are not logged. (The versions, notes, cross-references and
+  attachment-details reads were added in the same-day acceptance review.)
+- **A read of an assembled file requires an identity.** The log must say who, so the read
+  is refused without one (401 in header mode, 503 in dev mode without `OAK_DEV_USER`), the
+  same rule as for an action that records a person. A read of an open binder needs none.
+- The reading of the Assembly screen that lists the log is itself logged; the list is read
+  after the row is written, so the reader sees their own visit.
+- The produced archive carries the log twice: as `access_log.json`, and merged into
+  `audit_trail.json` with kind `access`, so the single time-ordered trail shows events, note
+  steps and reads together. The archive produced at a given moment holds the log up to that
+  moment; the `produce` row itself is written after the archive is built.
+
+## D26 · Cross-references and broken-reference detection — 30 Oct 2026
+
+Spec 4 defines `xref · from_wp · to_wp | to_fs_line | to_vault_doc · direction`; spec 3B asks
+for "cross-references in and out" on the paper; spec 3E and 3F make a broken reference a
+named assembly blocker. D21 deferred all of it because nothing could then break. Pass 1 is
+now closed instead by building the table (migration 0005, additive) and checking whatever
+the data allows:
+
+- **One target per row**, enforced by a CHECK: another paper, an FS line (free text, at most
+  200 characters, until the Spine exists), or a document by its store id (`vault_doc_id`,
+  now exposed on the attachment record for this purpose). A paper target must be a paper of
+  the same binder and never the paper itself.
+- **`direction` is read as the way the reference points**: `to`, the paper it is written on
+  refers to the target; `from`, the target refers to that paper. "In and out" on a paper are
+  read from both ends: rows written on the paper and rows pointing at it, each turned the
+  right way round. The spec gives the field no value set; this is the interpretation chosen,
+  stated here. "Clickable in both directions" (spec 3E) holds for every target that exists
+  here: a paper target links to the paper and appears on it; a document target links to the
+  attachment it is filed as, and the paper carrying that document sees the reference coming
+  in (same-day review). An FS line has nowhere to link until the Spine exists.
+- **What is checked**: a document target is broken when no paper of the binder carries that
+  document any more (its only attachment was removed); re-attaching the same bytes anywhere
+  in the binder mends it. A paper target is re-checked to be a paper of the same binder;
+  papers are never deleted and the foreign key forbids a dangling id, so the check exists so
+  that the blocker list says what was checked. A broken reference is a `broken_reference`
+  blocker named by the referring paper, and assembly is refused.
+- **What is not checked**: an FS-line target, since the Spine is not part of this product.
+  The Assembly screen lists this as *not checked* with the count of such references in the
+  file, never counting them as clear.
+- **References are frozen with the file.** They are added and removed only while the binder
+  is open (the application role holds the four ordinary rights on `xref`; the service refuses
+  changes after assembly, since spec 3F says nothing is deleted after it). They are **not part
+  of the manifest or its hash**: the manifest hashes content, a reference is a pointer between
+  pieces of content, and including it would have made every binder assembled before this
+  migration stop matching its recorded manifest. The produced archive lists each paper's
+  references, with their check result, as `papers/<folder>/cross_references.json`.
+- The cross-reference **map** screen (spec screen 4, "FS line to paper to document") stays
+  Pass 2 with the Spine, as spec 6 places it.
+
+## D27 · Google Drive is the vault — 30 Oct 2026
+
+The firm named its vault: one Google Drive folder, *Working Paper Binder Vault*, in a personal
+Google account, with a Desktop OAuth client. Spec 6's "attachments from the vault" is built
+on the D23 protocol with no schema change: ``vault_doc_id`` holds Drive's file id, the row's
+``sha256`` stays the Binder's own hash, and ``verified_read`` re-hashes every read as before.
+
+**Scope.** The narrow ``drive.file`` scope reaches only files the application created or a
+person picked for it in Google's picker; a hand-made folder is outside it, and an upload into
+it answers 404. Using the firm's existing folder therefore needs the full ``drive`` scope,
+which technically grants the token read, write and delete over the whole account's Drive.
+Stated here and in the README so nobody mistakes the application's discipline for a Google
+guarantee. Two alternatives were offered and declined: a dedicated Google account for the
+vault, and letting the Binder create its own folder under ``drive.file``.
+
+**Confinement by the adapter.** Every file the Binder creates has the vault folder as its
+only parent and ``appProperties.oak_binder=attachment`` plus the SHA-256. Every read, exists
+and delete first fetches metadata and refuses a file that is not in the folder, not marked,
+trashed, or a folder. The adapter never calls list or search, never calls the update-content
+endpoint, and never touches a file id it did not create or was not given by a Binder row. The
+Drive double records calls, and tests assert no list call and no call on a file outside the
+folder, including during purge.
+
+**Write-once.** A resumable upload, then verification against Drive's ``sha256Checksum`` when
+reported, its ``md5Checksum`` otherwise, or a read-back when neither; then Drive's
+read-only content restriction. An upload that fails verification or locking is deleted and
+refused, so nothing unverified stays. The restriction is soft (an editor can lift it), which
+is why the hash check on every read remains the integrity rule.
+
+**Credentials.** The client JSON and the refresh-token file live under the git-ignored
+``backend/secrets``; the token file is written atomically with owner-only permissions where
+the OS allows. Their contents never reach logs, errors or responses: token-endpoint failures
+report only a status and what to do, dataclasses holding them redact their ``repr``, and tests
+assert no token string appears in any error. A refresh token obtained while the consent
+screen is in Testing status expires after seven days; the screen must be In production.
+
+**Consent.** ``python -m oak_binder.vault_login`` runs the installed-application flow with
+PKCE on a loopback redirect, saves the refresh token, then fetches the folder's metadata and
+reports its name and whether the account can add children: a wrong id, a folder the account
+cannot see, or a trashed folder fails there rather than at the first upload. It works with
+``OAK_STORE=local``, so the consent and the folder check happen before vault mode is on.
+
+**Migration.** ``python -m oak_binder.vault_migrate`` is a dry run by default; ``--apply``
+uploads each local document once (however many rows share it), verifies it by hash after
+upload and again by reading it back, rewrites ``wp_attachment.vault_doc_id`` and
+``xref.to_vault_doc`` together, and commits per document so an interrupted run resumes.
+Version bodies and manifests list attachments by hash, never by id, so no signed content and
+no recorded assembly hash changes. Local files are kept as a second copy. The live
+``oak_binder`` database holds no rows and is not touched by this work.
+
+**Failure.** Transport faults, quota refusals and 5xx answers become ``StoreUnavailable``
+(HTTP 503): an upload or a production fails whole, never half-written.
 
 ## D10 · Pass 1 first — 28 Oct 2026
 

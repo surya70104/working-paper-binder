@@ -4,11 +4,13 @@ production).
 Archive layout:
   manifest.json                     the manifest recorded at the latest assembly
   binder.json                       the binder's fields, state and hashes
-  audit_trail.json                  every binder event (assembled, amended, produced, purged)
-                                    and every review-note step, in time order
+  audit_trail.json                  every binder event (assembled, amended, produced, purged),
+                                    every review-note step and every access, in time order
+  access_log.json                   who opened the file after assembly (spec 3H)
   papers/<folder>/paper.json        the paper's current fields and status
   papers/<folder>/versions/<n>.json every version: body, preparer, reviewer, signer, hash
   papers/<folder>/review_notes.json the paper's review notes with every step
+  papers/<folder>/cross_references.json the paper's references in and out, checked
   papers/<folder>/attachments/<name> the original bytes, native format
   CHECKSUMS.sha256                  "<sha256>  <path>" for every other member
 
@@ -36,8 +38,10 @@ from sqlalchemy.orm import Session
 from oak_binder.errors import Conflict
 from oak_binder.hashing import sha256_of_bytes
 from oak_binder.models import Binder, BinderState, EventKind, Wp, WpAttachment
+from oak_binder.services import access as access_service
 from oak_binder.services import papers as paper_service
 from oak_binder.services import review_notes
+from oak_binder.services import xrefs as xref_service
 from oak_binder.services.assembly import build_manifest, events, file_hash, latest_manifest, record
 from oak_binder.services.attachments import AttachmentStore, verified_read
 
@@ -131,6 +135,35 @@ def _notes_for_archive(session: Session, paper: Wp) -> list[dict[str, Any]]:
     ]
 
 
+def _xrefs_for_archive(session: Session, binder: Binder, paper: Wp) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for x in xref_service.for_paper(session, paper):
+        source = session.get(Wp, x.from_wp)
+        target = session.get(Wp, x.to_wp) if x.to_wp is not None else None
+        filed = (
+            xref_service.document_attachment(session, binder, x.to_vault_doc)
+            if x.to_vault_doc is not None
+            else None
+        )
+        entries.append(
+            {
+                "id": str(x.id),
+                "from_ref": source.ref if source else None,
+                "to_ref": target.ref if target else None,
+                "to_fs_line": x.to_fs_line,
+                "to_vault_doc": x.to_vault_doc,
+                "to_filename": filed.filename if filed is not None else None,
+                "direction": x.direction,
+                "outgoing": xref_service.is_outgoing(x, paper),
+                "created_by": x.created_by,
+                "created_at": x.created_at,
+                "broken": xref_service.check(session, binder, x),
+                "checked": x.to_fs_line is None,
+            }
+        )
+    return entries
+
+
 def produce(
     session: Session, store: AttachmentStore, binder: Binder, *, user: str, now: datetime
 ) -> bytes:
@@ -184,8 +217,23 @@ def produce(
         for e in events(session, binder)
     ]
     trail.extend(note_trail(session, papers))
+    access_rows = access_service.for_binder(session, binder)
+    trail.extend(
+        {
+            "kind": "access",
+            "actor": a.user,
+            "at": a.at,
+            "reason": None,
+            "details": {"action": a.action},
+        }
+        for a in access_rows
+    )
     trail.sort(key=lambda entry: entry["at"])
     members["audit_trail.json"] = _json(trail)
+    # Spec 3H: the access log as its own record, every read of the file since assembly.
+    members["access_log.json"] = _json(
+        [{"user": a.user, "action": a.action, "at": a.at} for a in access_rows]
+    )
 
     for paper in papers:
         folder = f"papers/{folders[paper]}"
@@ -221,6 +269,9 @@ def produce(
                 }
             )
         members[f"{folder}/review_notes.json"] = _json(_notes_for_archive(session, paper))
+        members[f"{folder}/cross_references.json"] = _json(
+            _xrefs_for_archive(session, binder, paper)
+        )
         used: set[str] = set()
         for attachment in session.scalars(
             select(WpAttachment).where(WpAttachment.wp_id == paper.id).order_by(WpAttachment.sha256)

@@ -32,18 +32,28 @@ from oak_binder.models import (
     WpVersion,
 )
 from oak_binder.services import papers as paper_service
+from oak_binder.services import xrefs as xref_service
 from oak_binder.services.attachments import AttachmentStore, _attach_row, verified_read
 from oak_binder.services.binders import build_index
 
 MANIFEST_VERSION = 1
 
-# Blockers the specification names (3F) that depend on Pass 2 features. They are reported
-# as unchecked, never silently counted as clear. Open review notes left this list when the
-# review_note table arrived (migration 0003).
+# Spec 3F names four blockers. Three are checked in full; broken cross-references are
+# checked for paper and document targets (D26) and cannot be checked for Spine lines, since
+# the Spine is not part of this product (D21). What is not checked is reported, never counted
+# as clear.
 NOT_CHECKED: tuple[str, ...] = (
-    "broken cross-references: cross-references are Pass 2 (D21); references to Spine lines "
-    "and vault documents do not exist yet, so none can be checked",
+    "cross-references to FS lines: the Financial Spine is not part of this product (D21), so "
+    "a reference to a Spine line cannot be followed; references to papers and documents are "
+    "checked",
 )
+
+
+def not_checked(session: Session, binder: Binder) -> list[str]:
+    """The not-checked list for this binder, with the count of FS-line references it holds."""
+    lines = xref_service.unchecked_fs_lines(session, binder)
+    suffix = f" ({lines} such reference(s) in this file)" if lines else " (none in this file)"
+    return [NOT_CHECKED[0] + suffix]
 
 
 @dataclass(frozen=True)
@@ -75,6 +85,8 @@ def blockers(session: Session, binder: Binder) -> list[Blocker]:
                 found.append(
                     Blocker("open_review_notes", paper.ref, f"{notes} open review note(s)")
                 )
+    for item in xref_service.broken(session, binder):
+        found.append(Blocker("broken_reference", item.from_ref, item.detail))
     return found
 
 

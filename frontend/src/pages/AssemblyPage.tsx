@@ -79,7 +79,7 @@ export function AssemblyPage({ id }: { id: string }) {
         ) : (
           <p className="mt-2 text-sm text-green-800">Nothing blocks assembly.</p>
         )}
-        <p className="mt-3 text-xs text-slate-500">Not checked (Pass 2):</p>
+        <p className="mt-3 text-xs text-slate-500">Not checked:</p>
         <ul className="list-disc pl-5 text-xs text-slate-500">
           {status.not_checked.map((n) => (
             <li key={n}>{n}</li>
@@ -238,6 +238,29 @@ export function AssemblyPage({ id }: { id: string }) {
           </div>
         )}
       </section>
+
+      {(assembled || purged) && (
+        <section>
+          <h2 className="text-lg font-semibold">Access log</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Who opened the file after assembly (SA 230; spec 3H). Every read of the binder, a
+            paper, an attachment, this status, a verification or a production is recorded and
+            cannot be edited.
+          </p>
+          {status.access.length === 0 ? (
+            <p className="mt-2 text-sm text-slate-500">No access recorded yet.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-slate-100 rounded border border-slate-200 bg-white text-sm">
+              {status.access.map((a, i) => (
+                <li key={i} className="px-3 py-2" data-testid="access">
+                  <span className="font-medium">{a.user}</span> · {a.action} ·{" "}
+                  <span className="text-slate-500">{a.at}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section>
         <h2 className="text-lg font-semibold">Audit trail</h2>

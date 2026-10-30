@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from oak_binder.models import Wp, WpAttachment, WpVersion
 from oak_binder.schemas.attachments import AttachmentOut
+from oak_binder.schemas.xrefs import XrefOut
 
 
 class PaperCreate(BaseModel):
@@ -82,6 +83,8 @@ class PaperOut(PaperSummary):
     open_review_notes: int
     versions: list[VersionOut]
     attachments: list[AttachmentOut]
+    # Spec 3B: cross-references in and out, read from this paper.
+    xrefs: list[XrefOut]
 
     @classmethod
     def build(
@@ -91,6 +94,7 @@ class PaperOut(PaperSummary):
         attachments: list[WpAttachment],
         binder_state: str,
         open_review_notes: int = 0,
+        xrefs: list[XrefOut] | None = None,
     ) -> PaperOut:
         base = PaperSummary.model_validate(paper).model_dump()
         return cls(
@@ -107,4 +111,5 @@ class PaperOut(PaperSummary):
             open_review_notes=open_review_notes,
             versions=[VersionOut.model_validate(v) for v in versions],
             attachments=[AttachmentOut.model_validate(a) for a in attachments],
+            xrefs=xrefs or [],
         )

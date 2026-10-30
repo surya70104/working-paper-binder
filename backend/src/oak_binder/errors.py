@@ -35,6 +35,12 @@ class UnsupportedType(BinderError):
     status_code = 415
 
 
+class StoreUnavailable(BinderError):
+    """The attachment store cannot be reached or refused the call; nothing was half-done."""
+
+    status_code = 503
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(BinderError)
     async def _binder_error(request: Request, exc: BinderError) -> JSONResponse:

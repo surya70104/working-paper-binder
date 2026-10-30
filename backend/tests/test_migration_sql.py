@@ -44,7 +44,8 @@ def test_upgrade_creates_every_model_table_with_every_column() -> None:
     for table in Base.metadata.tables.values():
         block = table_block(sql, table.name)
         for column in table.columns:
-            in_block = re.search(rf"^\s+{re.escape(column.name)} [A-Z]", block, re.M)
+            # A reserved word such as "user" is rendered quoted.
+            in_block = re.search(rf'^\s+"?{re.escape(column.name)}"? [A-Z]', block, re.M)
             added = f"ALTER TABLE {table.name} ADD COLUMN {column.name} " in sql
             assert in_block or added, f"{table.name}.{column.name} not in any migration"
 
@@ -116,9 +117,31 @@ def test_review_note_is_append_only_at_the_database() -> None:
             assert "UPDATE" not in line and "DELETE" not in line
 
 
+def test_access_log_is_append_only_at_the_database() -> None:
+    sql = rendered("upgrade")
+    assert (
+        "CREATE TRIGGER trg_access_log_append_only BEFORE UPDATE OR DELETE ON access_log "
+        "FOR EACH ROW EXECUTE FUNCTION oak_binder_append_only()"
+    ) in sql
+    assert "CREATE TRIGGER trg_access_log_no_truncate BEFORE TRUNCATE ON access_log" in sql
+    assert "GRANT SELECT, INSERT ON access_log TO oak_binder_app" in sql
+    for line in sql.splitlines():
+        if "GRANT" in line and "access_log" in line:
+            assert "UPDATE" not in line and "DELETE" not in line
+
+
 def test_downgrade_removes_everything_it_created() -> None:
     sql = rendered("downgrade")
-    for table in ("review_note", "binder_event", "wp_attachment", "wp_version", "wp", "binder"):
+    for table in (
+        "xref",
+        "access_log",
+        "review_note",
+        "binder_event",
+        "wp_attachment",
+        "wp_version",
+        "wp",
+        "binder",
+    ):
         assert f"DROP TABLE {table};" in sql
     # 0002 is reversed before 0001: the event table goes first.
     assert sql.index("DROP TABLE binder_event;") < sql.index("DROP TABLE wp_attachment;")
