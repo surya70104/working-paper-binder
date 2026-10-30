@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     dev_user: str | None = None
     attachments_dir: Path = Path("../var/attachments")
     max_upload_bytes: int = 26_214_400
+    # Where attachment bytes live (D23). "local" is the write-once directory above; "vault"
+    # is reserved for the firm's document vault once it is confirmed. The three vault
+    # settings are generic names, not a product: an adapter will read them.
+    store: Literal["local", "vault"] = "local"
+    vault_url: str | None = None
+    vault_credential: str | None = None
+    vault_container: str | None = None
 
     @field_validator("database_url", "migration_database_url")
     @classmethod
@@ -76,6 +83,26 @@ class Settings(BaseSettings):
             return None
         name = f"OAK_{(info.field_name or 'test_database_url').upper()}"
         return check_binder_url(value, allowed=frozenset({TEST_DATABASE}), name=name)
+
+    @model_validator(mode="after")
+    def _vault_guard(self) -> Settings:
+        if self.store != "vault":
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("OAK_VAULT_URL", self.vault_url),
+                ("OAK_VAULT_CREDENTIAL", self.vault_credential),
+                ("OAK_VAULT_CONTAINER", self.vault_container),
+            )
+            if not (value or "").strip()
+        ]
+        if missing:
+            raise ValueError(
+                f"OAK_STORE=vault needs {', '.join(missing)}; "
+                "set them, or use OAK_STORE=local (architecture D23)"
+            )
+        return self
 
     @model_validator(mode="after")
     def _production_guard(self) -> Settings:

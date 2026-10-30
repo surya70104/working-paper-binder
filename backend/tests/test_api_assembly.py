@@ -412,7 +412,8 @@ def test_purge_is_refused_before_retention_and_recorded_after(api: TestClient) -
     event = status["events"][-1]
     assert event["kind"] == "purged" and event["actor"] == PARTNER and event["at"]
     assert event["details"]["attachment_rows_deleted"] == 1
-    assert event["details"]["files_deleted"] == 1
+    assert event["details"]["documents_deleted"] == 1
+    assert event["details"]["documents_retained_for_other_binders"] == 0
     assert not [p for p in root.rglob("*") if p.is_file()]
 
     # content is gone; hashed metadata remains (D18)

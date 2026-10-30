@@ -32,7 +32,7 @@ from oak_binder.models import (
     WpVersion,
 )
 from oak_binder.services import papers as paper_service
-from oak_binder.services.attachments import AttachmentStore, _attach_row
+from oak_binder.services.attachments import AttachmentStore, _attach_row, verified_read
 from oak_binder.services.binders import build_index
 
 MANIFEST_VERSION = 1
@@ -366,7 +366,7 @@ def verify(session: Session, store: AttachmentStore, binder: Binder) -> Verifica
             select(WpAttachment).where(WpAttachment.wp_id == paper.id)
         ).all():
             try:
-                store.read(attachment.sha256)
+                verified_read(store, attachment)
             except Exception as exc:  # noqa: BLE001  # every failure is a finding here
                 checks.append(Check(f"attachment {attachment.filename}", False, str(exc)))
             else:

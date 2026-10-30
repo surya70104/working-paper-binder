@@ -203,13 +203,17 @@ retention.
 
 ### Attachments, assembly, retention and production (Stage 6)
 
-- **Attachments** are kept in a local write-once store under `var\attachments`
-  (`OAK_ATTACHMENTS_DIR`), outside anything a web server serves, named by SHA-256. **Vault
-  integration has not been done, because no vault exists**: a search of this project, the
-  Financial Spine (`D:\CAF`), the OAK notes and every project document on 29 October 2026
-  found no vault module, API or credentials (D16). The store sits behind one interface so a
-  vault can replace it without a schema change (D17). Files are served by id, re-hashed on
-  every read, and a mismatch is refused. An attachment
+- **Attachments** are kept behind a storage protocol (D23). `OAK_STORE=local`, the default,
+  is a write-once store under `var\attachments` (`OAK_ATTACHMENTS_DIR`), outside anything a
+  web server serves, named by SHA-256. **Vault integration has not been done, because no
+  vault exists**: a search of this project, the Financial Spine (`D:\CAF`), the OAK notes and
+  every project document on 29 October 2026 found no vault module, API or credentials (D16).
+  `OAK_STORE=vault` is reserved: it needs `OAK_VAULT_URL`, `OAK_VAULT_CREDENTIAL` and
+  `OAK_VAULT_CONTAINER`, and the application refuses to start on it until an adapter exists.
+  On every row the store's document id (`vault_doc_id`) and the Binder's own SHA-256 are
+  kept apart; every read re-hashes the bytes and refuses a mismatch, whichever store serves
+  them. Identical bytes are stored once; a purge deletes a document only when no paper in
+  any binder still references it. An attachment
   belongs to the paper and joins the signed record at the next prepare; each version body
   lists the paper's attachments by hash.
 - **Assembly** is blocked by named items: each missing required paper, each paper not signed

@@ -37,6 +37,7 @@ from sqlalchemy.orm import sessionmaker
 from oak_binder.config import TEST_DATABASE, Settings, check_binder_url
 from oak_binder.db import make_engine
 from oak_binder.main import create_app
+from oak_binder.services.attachments import InMemoryVaultStore
 
 APP_URL = "postgresql+psycopg://oak_binder_app:placeholder@localhost:5432/oak_binder"
 TEST_URL = "postgresql+psycopg://oak_binder_owner:placeholder@localhost:5432/oak_binder_test"
@@ -236,3 +237,10 @@ def api(
 def act_as(api: TestClient, user: str | None) -> None:
     """Change the development identity the API records as preparer or reviewer."""
     cast(FastAPI, api.app).state.settings.dev_user = user
+
+
+def use_vault(api: TestClient) -> InMemoryVaultStore:
+    """Swap the running app's store for the in-memory vault stand-in (D23)."""
+    store = InMemoryVaultStore()
+    cast(FastAPI, api.app).state.attachment_store = store
+    return store

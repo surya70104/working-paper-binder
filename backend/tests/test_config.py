@@ -77,6 +77,31 @@ def test_production_refuses_dev_user(dev: MakeSettings) -> None:
         dev(env="production", dev_user="dev@localhost")
 
 
+def test_store_defaults_to_local_and_vault_needs_its_settings(dev: MakeSettings) -> None:
+    assert dev().store == "local"
+    with pytest.raises(
+        ValidationError,
+        match="OAK_STORE=vault needs OAK_VAULT_URL, OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER",
+    ):
+        dev(store="vault")
+    with pytest.raises(ValidationError, match="needs OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER"):
+        dev(store="vault", vault_url="https://vault.example.test")
+    # A blank value counts as missing.
+    with pytest.raises(ValidationError, match="needs OAK_VAULT_CREDENTIAL, OAK_VAULT_CONTAINER"):
+        dev(store="vault", vault_url="https://vault.example.test", vault_credential="  ")
+    with pytest.raises(ValidationError, match="needs OAK_VAULT_CONTAINER"):
+        dev(store="vault", vault_url="https://vault.example.test", vault_credential="x")
+    complete = dev(
+        store="vault",
+        vault_url="https://vault.example.test",
+        vault_credential="x",
+        vault_container="c",
+    )
+    assert complete.store == "vault"
+    with pytest.raises(ValidationError, match="Input should be 'local' or 'vault'"):
+        dev(store="sharepoint")
+
+
 def test_production_refuses_test_database(dev: MakeSettings) -> None:
     with pytest.raises(ValidationError, match="must name oak_binder when OAK_ENV=production"):
         dev(env="production", dev_user=None, database_url=BINDER_TEST)

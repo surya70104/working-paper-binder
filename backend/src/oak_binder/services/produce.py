@@ -39,7 +39,7 @@ from oak_binder.models import Binder, BinderState, EventKind, Wp, WpAttachment
 from oak_binder.services import papers as paper_service
 from oak_binder.services import review_notes
 from oak_binder.services.assembly import build_manifest, events, file_hash, latest_manifest, record
-from oak_binder.services.attachments import AttachmentStore
+from oak_binder.services.attachments import AttachmentStore, verified_read
 
 CHECKSUMS = "CHECKSUMS.sha256"
 
@@ -229,7 +229,7 @@ def produce(
             if name in used:
                 name = f"{attachment.sha256[:8]}-{name}"
             used.add(name)
-            members[f"{folder}/attachments/{name}"] = store.read(attachment.sha256)
+            members[f"{folder}/attachments/{name}"] = verified_read(store, attachment)
 
     checksums = "".join(
         f"{sha256_of_bytes(data)}  {path}\n" for path, data in sorted(members.items())

@@ -13,7 +13,7 @@ from oak_binder.api import router
 from oak_binder.config import Settings, get_settings
 from oak_binder.db import make_engine, make_session_factory
 from oak_binder.errors import install_error_handlers
-from oak_binder.services.attachments import AttachmentStore
+from oak_binder.services.attachments import build_store
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,9 +22,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved
     app.state.engine = make_engine(resolved.database_url)
     app.state.session_factory = make_session_factory(app.state.engine)
-    # Local write-once store, not a vault (D7, D17). Relative paths resolve from the working
-    # directory, which is backend\ when run as the README says.
-    app.state.attachment_store = AttachmentStore(resolved.attachments_dir.resolve())
+    # The attachment store OAK_STORE selects: the local write-once directory today; a vault
+    # adapter once the vault is confirmed (D7, D17, D23).
+    app.state.attachment_store = build_store(resolved)
     install_error_handlers(app)
     app.include_router(router)
 

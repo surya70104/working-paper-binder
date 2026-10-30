@@ -1,10 +1,18 @@
-"""Attachments: native-format files kept in a local write-once store (spec 3B, 3G; D7, D17).
+"""Attachments: native-format files behind a storage protocol (spec 3B, 3G; D7, D17, D23).
 
-This is a local store, not a vault integration: no vault exists in this project or in the
-Financial Spine. Files live under OAK_ATTACHMENTS_DIR, outside anything a web server serves,
-at ``<sha256[:2]>/<sha256>``. Bytes are never altered; the same bytes are stored once; every
-read recomputes the hash and refuses a mismatch. ``vault_doc_id`` holds the store key so a
-vault can take over without a schema change.
+Two ideas are kept apart on every row:
+- ``vault_doc_id`` is the key the store knows the document by. For the local store it is the
+  file's SHA-256; for a vault it will be whatever opaque id the vault returns.
+- ``sha256`` is the Binder's own hash of the bytes, computed at upload. Every read goes
+  through ``verified_read``, which re-hashes what the store returns and refuses a mismatch,
+  whatever the store. The integrity rule therefore does not depend on the backend.
+
+Stores implement ``AttachmentStore``: put, read, exists, delete. ``LocalAttachmentStore`` is
+the write-once, content-addressed directory under OAK_ATTACHMENTS_DIR, outside anything a
+web server serves. ``InMemoryVaultStore`` behaves like a vault (opaque ids, no
+content-addressing) and exists for the storage contract tests. There is no real vault
+adapter: none has been identified (D16, D23). ``build_store`` picks the store from
+OAK_STORE and refuses a vault selection until an adapter exists.
 """
 
 from __future__ import annotations
@@ -14,11 +22,13 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path, PurePath
+from typing import Protocol, runtime_checkable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from oak_binder.config import Settings
 from oak_binder.errors import Conflict, Invalid, NotFound, TooLarge, UnsupportedType
 from oak_binder.hashing import sha256_of_bytes
 from oak_binder.models import Binder, BinderState, Wp, WpAttachment, WpStatus
@@ -37,18 +47,34 @@ MEDIA_TYPES: dict[str, str] = {
 }
 
 
-class AttachmentStore:
-    """Content-addressed, write-once files on local disk."""
+@runtime_checkable
+class AttachmentStore(Protocol):
+    """What any document store must offer the Binder. Keys are opaque document ids."""
+
+    def put(self, data: bytes, *, filename: str, media_type: str) -> str:
+        """Store bytes; return the document id. Must never alter or overwrite stored bytes."""
+
+    def read(self, doc_id: str) -> bytes:
+        """The stored bytes, or NotFound. Integrity is checked by the caller."""
+
+    def exists(self, doc_id: str) -> bool: ...
+
+    def delete(self, doc_id: str) -> bool:
+        """Remove a document; True if it existed. Only the purge path calls this (spec 3G)."""
+
+
+class LocalAttachmentStore:
+    """Content-addressed, write-once files on local disk. The document id is the SHA-256."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
 
-    def path_for(self, sha256: str) -> Path:
-        if not re.fullmatch(r"[0-9a-f]{64}", sha256):
-            raise Invalid("not a SHA-256 key")
-        return self.root / sha256[:2] / sha256
+    def path_for(self, doc_id: str) -> Path:
+        if not re.fullmatch(r"[0-9a-f]{64}", doc_id):
+            raise Invalid("not a local store key")
+        return self.root / doc_id[:2] / doc_id
 
-    def put(self, data: bytes) -> str:
+    def put(self, data: bytes, *, filename: str, media_type: str) -> str:
         """Store bytes under their hash. Identical bytes are stored once; nothing is ever
         overwritten. Returns the key."""
         key = sha256_of_bytes(data)
@@ -61,29 +87,74 @@ class AttachmentStore:
         os.replace(temp, target)  # atomic: a reader never sees a half-written file
         return key
 
-    def exists(self, sha256: str) -> bool:
-        return self.path_for(sha256).exists()
+    def exists(self, doc_id: str) -> bool:
+        return self.path_for(doc_id).exists()
 
-    def read(self, sha256: str) -> bytes:
-        """The stored bytes, re-hashed on the way out. A mismatch is refused, not served."""
-        path = self.path_for(sha256)
+    def read(self, doc_id: str) -> bytes:
+        path = self.path_for(doc_id)
         if not path.exists():
-            raise NotFound(f"stored file {sha256[:12]}… is missing from the attachment store")
-        data = path.read_bytes()
-        if sha256_of_bytes(data) != sha256:
-            raise Conflict(
-                f"stored file {sha256[:12]}… no longer matches its hash; "
-                "the attachment store has been altered"
-            )
-        return data
+            raise NotFound(f"stored file {doc_id[:12]}… is missing from the attachment store")
+        return path.read_bytes()
 
-    def delete(self, sha256: str) -> bool:
-        """Remove a stored file. Only the purge path calls this (spec 3G)."""
-        path = self.path_for(sha256)
+    def delete(self, doc_id: str) -> bool:
+        path = self.path_for(doc_id)
         if not path.exists():
             return False
         path.unlink()
         return True
+
+
+class InMemoryVaultStore:
+    """A vault stand-in for tests: opaque ids, no content-addressing, and a way to tamper.
+    Not for production use."""
+
+    def __init__(self) -> None:
+        self.documents: dict[str, tuple[bytes, str, str]] = {}
+
+    def put(self, data: bytes, *, filename: str, media_type: str) -> str:
+        doc_id = f"vault-{uuid.uuid4().hex}"
+        self.documents[doc_id] = (data, filename, media_type)
+        return doc_id
+
+    def read(self, doc_id: str) -> bytes:
+        try:
+            return self.documents[doc_id][0]
+        except KeyError:
+            raise NotFound(f"document {doc_id} is missing from the vault") from None
+
+    def exists(self, doc_id: str) -> bool:
+        return doc_id in self.documents
+
+    def delete(self, doc_id: str) -> bool:
+        return self.documents.pop(doc_id, None) is not None
+
+    def tamper(self, doc_id: str, data: bytes) -> None:
+        """Simulate a vault that altered a document behind the Binder's back."""
+        _, filename, media_type = self.documents[doc_id]
+        self.documents[doc_id] = (data, filename, media_type)
+
+
+def build_store(settings: Settings) -> AttachmentStore:
+    """The store OAK_STORE selects. Relative local paths resolve from the working
+    directory, which is backend\\ when run as the README says."""
+    if settings.store == "local":
+        return LocalAttachmentStore(settings.attachments_dir.resolve())
+    raise NotImplementedError(
+        "OAK_STORE=vault is configured but no vault adapter exists yet: the vault product, "
+        "its API and its authentication are unconfirmed (architecture D23). Use OAK_STORE=local."
+    )
+
+
+def verified_read(store: AttachmentStore, attachment: WpAttachment) -> bytes:
+    """The attachment's bytes from the store, re-hashed and compared with the hash recorded
+    at upload. A mismatch is refused, not served, whichever store is behind it."""
+    data = store.read(attachment.vault_doc_id)
+    if sha256_of_bytes(data) != attachment.sha256:
+        raise Conflict(
+            f"stored file {attachment.sha256[:12]}… no longer matches its hash; "
+            "the attachment store has been altered"
+        )
+    return data
 
 
 def safe_filename(name: str) -> str:
@@ -138,6 +209,14 @@ def attach(
     )
 
 
+def _existing_doc_id(session: Session, digest: str) -> str | None:
+    """A document id already holding these exact bytes, if any row anywhere has them. The
+    same evidence attached to two papers is stored once, whatever the store."""
+    return session.scalar(
+        select(WpAttachment.vault_doc_id).where(WpAttachment.sha256 == digest).limit(1)
+    )
+
+
 def _attach_row(
     session: Session,
     store: AttachmentStore,
@@ -156,13 +235,16 @@ def _attach_row(
         raise Invalid("the attachment is empty")
     if len(data) > max_bytes:
         raise TooLarge(f"{len(data)} bytes exceeds the limit of {max_bytes} bytes")
-    key = store.put(data)
+    digest = sha256_of_bytes(data)
+    doc_id = _existing_doc_id(session, digest)
+    if doc_id is None or not store.exists(doc_id):
+        doc_id = store.put(data, filename=name, media_type=media_type)
     row = WpAttachment(
         wp_id=paper.id,
         wp_version_id=None,
-        vault_doc_id=key,
+        vault_doc_id=doc_id,
         identifying_chars=(identifying_chars or "").strip() or None,
-        sha256=key,
+        sha256=digest,
         filename=name,
         media_type=media_type,
         size_bytes=len(data),
@@ -200,9 +282,21 @@ def for_paper(session: Session, paper: Wp) -> list[WpAttachment]:
     )
 
 
+def references(session: Session, doc_id: str) -> int:
+    """How many attachment rows point at a document id."""
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(WpAttachment)
+            .where(WpAttachment.vault_doc_id == doc_id)
+        )
+        or 0
+    )
+
+
 def remove(session: Session, paper: Wp, attachment: WpAttachment) -> None:
     """Detach a file before assembly. After assembly nothing is deleted (spec 3F, 8.4).
-    The stored bytes stay in the store: another paper may share them, and the hash remains
+    The stored document stays in the store: another paper may share it, and the hash remains
     in every version body that listed the file."""
     binder = session.get(Binder, paper.binder_id)
     assert binder is not None  # noqa: S101
@@ -228,4 +322,4 @@ def link_to_version(session: Session, paper: Wp, version_id: uuid.UUID) -> None:
 
 
 def content(store: AttachmentStore, attachment: WpAttachment) -> bytes:
-    return store.read(attachment.sha256)
+    return verified_read(store, attachment)

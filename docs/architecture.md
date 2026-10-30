@@ -301,6 +301,37 @@ attachment download:
   stops a browser from guessing another type from the bytes, so an upload is never
   rendered as a page.
 
+## D23 · Attachment storage behind a protocol; vault-ready, no vault chosen — 30 Oct 2026
+
+No vault has been identified (D16). To let one plug in the day it is confirmed, without a
+schema change, attachment storage now sits behind a four-method protocol in
+`services\attachments.py`: `put(data, filename, media_type) -> doc_id`, `read(doc_id)`,
+`exists(doc_id)`, `delete(doc_id)`.
+
+- **Key and hash are separate.** `vault_doc_id` is the key the store knows a document by;
+  `sha256` is the Binder's own hash computed at upload. For the local store the two are
+  equal; for a vault the key will be whatever opaque id it returns. Every read, in
+  download, verification and production, goes through `verified_read`, which re-hashes what
+  the store returns and refuses a mismatch. The integrity rule no longer depends on the
+  backend.
+- **`LocalAttachmentStore`** is the previous behaviour unchanged: content-addressed,
+  write-once, atomic writes, under `OAK_ATTACHMENTS_DIR`.
+- **`InMemoryVaultStore`** behaves like a vault for tests: opaque ids, no
+  content-addressing, and a way to alter a document behind the Binder's back. Not for
+  production.
+- **Identical bytes are stored once** in any store: an upload whose hash already has a row
+  reuses that row's document id. A purge deletes a document only when no row anywhere still
+  references its id, so evidence shared with another binder survives.
+- **`OAK_STORE`** selects the store, `local` by default. `vault` requires `OAK_VAULT_URL`,
+  `OAK_VAULT_CREDENTIAL` and `OAK_VAULT_CONTAINER`, generic names rather than a product,
+  and the application refuses to start on `vault` until an adapter exists. No adapter is
+  written: the product, its API and its authentication are unconfirmed, and inventing them
+  would be worse than waiting.
+- **What the adapter will need to do**, read off the protocol: store bytes and return an id,
+  fetch bytes by id, confirm existence, delete after retention. Nothing else in the Binder
+  changes. The storage contract tests in `tests\test_storage.py` run against the local store
+  and the stand-in; they are the acceptance tests for the adapter.
+
 ## D10 · Pass 1 first — 28 Oct 2026
 
 Build order follows spec §6, Pass 1: index and templates · the WP record with
