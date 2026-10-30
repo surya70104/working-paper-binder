@@ -12,6 +12,7 @@ const assembled = assemblyFixture({
   state: "assembled",
   assembled_at: "2026-11-01T10:00:00Z",
   assembly_hash: HASH,
+  matches_recorded_manifest: true,
   blockers: [],
   manifest: {
     papers: [
@@ -79,6 +80,25 @@ test("purge needs retention to have expired and a confirmation", async () => {
   expect(screen.getByText(/destroys every attachment/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Confirm purge" }));
   await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/binders/b1/purge")).toBe(true));
+});
+
+test("production is withheld while amendments are pending re-assembly", async () => {
+  mockApi({
+    "GET /api/binders/b1/assembly": {
+      ...assembled,
+      matches_recorded_manifest: false,
+      blockers: [{ kind: "unsigned_paper", ref: "C-1", detail: "status is draft" }],
+      events: [
+        ...assembled.events,
+        { id: "e2", kind: "amended", actor: "partner@firm", at: "2026-11-02T10:00:00Z", reason: "Subsequent event", details: {} },
+      ],
+    },
+  });
+  render(<AssemblyPage id="b1" />);
+  await screen.findByRole("heading", { name: /Assembly/ });
+  expect(screen.queryByRole("link", { name: "Produce file (zip)" })).not.toBeInTheDocument();
+  expect(screen.getByTestId("produce-blocked")).toHaveTextContent("Re-assemble before producing");
+  expect(screen.getByRole("button", { name: "Re-assemble after amendments" })).toBeDisabled(); // C-1 unsigned
 });
 
 test("a verification failure lists the mismatches", async () => {

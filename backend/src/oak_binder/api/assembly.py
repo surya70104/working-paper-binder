@@ -30,6 +30,7 @@ def _status(session: DbSession, binder_id: uuid.UUID, today: Today) -> AssemblyS
         assembly.latest_manifest(session, binder),
         assembly.events(session, binder),
         today,
+        produce.matches_recorded_manifest(session, binder),
     )
 
 

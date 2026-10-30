@@ -146,13 +146,19 @@ export function AssemblyPage({ id }: { id: string }) {
             >
               Verify hashes
             </button>
-            {!purged && (
+            {!purged && status.matches_recorded_manifest && (
               <a
                 href={api.produceUrl(id)}
                 className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
               >
                 Produce file (zip)
               </a>
+            )}
+            {!purged && !status.matches_recorded_manifest && (
+              <span className="text-sm text-amber-900" data-testid="produce-blocked">
+                The file has changed since assembly (amendments pending). Re-assemble before
+                producing, so the manifest describes what is produced.
+              </span>
             )}
           </div>
           {verification && (

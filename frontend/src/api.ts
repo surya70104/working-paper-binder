@@ -120,6 +120,7 @@ export type AssemblyStatus = {
   assembly_hash: string | null;
   retention_until: string | null;
   purge_allowed: boolean;
+  matches_recorded_manifest: boolean;
   blockers: Blocker[];
   not_checked: string[];
   manifest: { papers: { ref: string; title: string; version: number | null; content_hash: string | null; attachments: { filename: string; sha256: string }[] }[] } | null;

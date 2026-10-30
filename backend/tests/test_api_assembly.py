@@ -249,6 +249,127 @@ def test_produce_file_is_one_archive_with_native_files_manifest_and_trail(api: T
     assert produced["details"]["archive_sha256"] == sha256_of_bytes(data)
 
 
+def test_produce_includes_review_notes_per_paper_and_in_the_trail(api: TestClient) -> None:
+    binder = complete_binder(api)
+    c1 = next(p for s in binder["sections"] for p in s["papers"] if p["ref"] == "C-1")
+    act_as(api, "reviewer@firm")
+    note = api.post(f"/api/papers/{c1['id']}/review-notes", json={"text": "Justify the benchmark"})
+    assert note.status_code == 201, note.text
+    nid = note.json()["note_id"]
+    api.post(
+        f"/api/review-notes/{nid}/assign", json={"assigned_to": "preparer@firm"}
+    ).raise_for_status()
+    act_as(api, "preparer@firm")
+    api.post(
+        f"/api/review-notes/{nid}/respond", json={"text": "Revenue, per SA 320"}
+    ).raise_for_status()
+    act_as(api, "reviewer@firm")
+    api.post(f"/api/review-notes/{nid}/clear").raise_for_status()
+    act_as(api, PARTNER)
+    api.post(f"/api/binders/{binder['id']}/assemble").raise_for_status()
+    data = api.get(f"/api/binders/{binder['id']}/produce").content
+    assert verify_archive(data) == []
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        notes = json.loads(archive.read("papers/C-1/review_notes.json"))
+        assert len(notes) == 1
+        assert notes[0]["text"] == "Justify the benchmark"
+        assert notes[0]["state"] == "cleared" and notes[0]["open"] is False
+        assert notes[0]["raised_by"] == "reviewer@firm"
+        assert notes[0]["response"] == "Revenue, per SA 320"
+        assert [s["state"] for s in notes[0]["steps"]] == [
+            "raised",
+            "assigned",
+            "responded",
+            "cleared",
+        ]
+        assert [s["actor"] for s in notes[0]["steps"]] == [
+            "reviewer@firm",
+            "reviewer@firm",
+            "preparer@firm",
+            "reviewer@firm",
+        ]
+        assert json.loads(archive.read("papers/A-1/review_notes.json")) == []  # always present
+
+        trail = json.loads(archive.read("audit_trail.json"))
+        note_entries = [e for e in trail if e["kind"] == "review_note"]
+        assert [e["details"]["state"] for e in note_entries] == [
+            "raised",
+            "assigned",
+            "responded",
+            "cleared",
+        ]
+        assert all(
+            e["details"]["ref"] == "C-1" and e["details"]["note_id"] == nid for e in note_entries
+        )
+        assert (
+            note_entries[2]["actor"] == "preparer@firm"
+            and note_entries[2]["details"]["text"] == "Revenue, per SA 320"
+        )
+        # chronological: every note step precedes the assembly event
+        assert [e["kind"] for e in trail][-1] == "assembled"
+        assert sorted(e["at"] for e in trail) == [e["at"] for e in trail]
+
+
+def test_produce_gives_colliding_paper_references_distinct_folders(api: TestClient) -> None:
+    # "D 1" and "D/1" both sanitise to "D_1"; without de-duplication one would overwrite the
+    # other inside the archive and a paper would silently vanish from the produced file.
+    binder = complete_binder(api)
+    first = create_paper(api, binder["id"], ref="D 1", section="D", title="Cash")
+    second = create_paper(api, binder["id"], ref="D/1", section="D", title="Bank")
+    full_chain(api, first["id"])
+    full_chain(api, second["id"])
+    api.post(f"/api/binders/{binder['id']}/assemble").raise_for_status()
+    data = api.get(f"/api/binders/{binder['id']}/produce").content
+    assert verify_archive(data) == []
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        folders = json.loads(archive.read("binder.json"))["paper_folders"]
+        assert folders["D 1"] != folders["D/1"]
+        assert folders["D 1"] == "papers/D_1"
+        assert (
+            folders["D/1"].startswith("papers/D_1-")
+            and len(folders["D/1"]) == len("papers/D_1-") + 8
+        )
+        titles = {
+            json.loads(archive.read(f"{folders[ref]}/paper.json"))["ref"] for ref in ("D 1", "D/1")
+        }
+        assert titles == {"D 1", "D/1"}
+        assert len([n for n in archive.namelist() if n.endswith("/paper.json")]) == 8
+
+
+def test_produce_is_refused_between_an_amendment_and_re_assembly(api: TestClient) -> None:
+    binder = complete_binder(api)
+    api.post(f"/api/binders/{binder['id']}/assemble").raise_for_status()
+    assert (
+        api.get(f"/api/binders/{binder['id']}/assembly").json()["matches_recorded_manifest"] is True
+    )
+    assert api.get(f"/api/binders/{binder['id']}/produce").status_code == 200
+
+    detail = api.get(f"/api/binders/{binder['id']}").json()
+    c1 = next(p for s in detail["sections"] for p in s["papers"] if p["ref"] == "C-1")
+    act_as(api, PARTNER)
+    api.patch(
+        f"/api/papers/{c1['id']}",
+        json={"conclusion": "Revised", "amendment_reason": "Subsequent event"},
+    ).raise_for_status()
+    status = api.get(f"/api/binders/{binder['id']}/assembly").json()
+    assert status["state"] == "assembled" and status["matches_recorded_manifest"] is False
+    refused = api.get(f"/api/binders/{binder['id']}/produce")
+    assert refused.status_code == 409
+    assert "re-assemble, then produce" in refused.json()["detail"]
+    events_before = [e["kind"] for e in status["events"]]
+    assert "produced" not in events_before[-1:]  # the refusal recorded nothing
+
+    full_chain(api, c1["id"])
+    api.post(f"/api/binders/{binder['id']}/assemble").raise_for_status()
+    assert (
+        api.get(f"/api/binders/{binder['id']}/assembly").json()["matches_recorded_manifest"] is True
+    )
+    again = api.get(f"/api/binders/{binder['id']}/produce")
+    assert again.status_code == 200
+    assert verify_archive(again.content) == []
+
+
 def binder_hash(api: TestClient, binder_id: str) -> str:
     digest: str = api.get(f"/api/binders/{binder_id}").json()["assembly_hash"]
     return digest

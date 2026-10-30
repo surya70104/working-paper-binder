@@ -86,6 +86,9 @@ def download(attachment_id: uuid.UUID, request: Request, session: DbSession) -> 
                 f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(row.filename)}"
             ),
             "X-Content-SHA256": row.sha256,
+            # The media type comes from the file's extension; tell the browser not to guess
+            # a different one from the bytes (and so never to treat an upload as HTML).
+            "X-Content-Type-Options": "nosniff",
         },
     )
 

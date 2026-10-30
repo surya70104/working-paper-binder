@@ -276,6 +276,31 @@ blocker that is structurally unable to detect anything. It arrives with Pass 2.
 Acceptance 8.2 is therefore satisfied; 8.3 is satisfied for unsigned papers, open notes and
 missing papers, and deferred for broken references.
 
+## D22 · Produce-file hardening — 30 Oct 2026
+
+Four findings from the Pass 1 quality review, all in `services\produce.py` and the
+attachment download:
+
+- **Review notes travel with the file.** Each paper's folder carries
+  `review_notes.json`, every note with every step, and `audit_trail.json` lists each
+  note step as an entry alongside the binder events, in time order. Spec 3G asks for the
+  complete file plus the audit trail; review notes are part of both.
+- **Paper folders cannot collide.** A reference is made file-safe for its folder name; a
+  reference that collapses to a name already used gets a short id suffix, and
+  `binder.json` carries the reference-to-folder map. Attachment names were already
+  de-duplicated; paper folders now are too.
+- **No production between an amendment and re-assembly.** Spec 8.5 requires the manifest
+  to list every paper with its hash and spec 8.6 requires the produced archive to be the
+  complete file plus that manifest. After an amendment the recorded manifest no longer
+  describes the papers, so an archive built then would describe itself wrongly. Production
+  is refused with a message to re-assemble; the assembly status carries
+  `matches_recorded_manifest` and the screen withholds the Produce link while it is false.
+  Refusal was chosen over a warning flag because a file produced for a regulator must be
+  internally consistent.
+- **Downloads are marked `nosniff`.** The media type comes from the extension; the header
+  stops a browser from guessing another type from the bytes, so an upload is never
+  rendered as a page.
+
 ## D10 · Pass 1 first — 28 Oct 2026
 
 Build order follows spec §6, Pass 1: index and templates · the WP record with

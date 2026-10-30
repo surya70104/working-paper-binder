@@ -100,6 +100,7 @@ export function assemblyFixture(overrides: Partial<AssemblyStatus> = {}): Assemb
     assembly_hash: null,
     retention_until: "2033-09-30",
     purge_allowed: false,
+    matches_recorded_manifest: false,
     blockers: [
       { kind: "missing_required_paper", ref: "A-1", detail: "Acceptance and continuance" },
       { kind: "unsigned_paper", ref: "C-1", detail: "status is in_review" },

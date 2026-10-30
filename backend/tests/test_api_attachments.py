@@ -41,6 +41,21 @@ def test_upload_preserves_bytes_and_records_the_hash(api: TestClient) -> None:
     assert download.headers["content-type"].startswith("application/pdf")
     assert 'filename="bank confirmation.pdf"' in download.headers["content-disposition"]
     assert download.headers["x-content-sha256"] == attachment["sha256"]
+    assert download.headers["x-content-type-options"] == "nosniff"
+
+
+def test_downloads_never_let_the_browser_sniff_a_type(api: TestClient) -> None:
+    # A text file whose bytes look like HTML must still be served as text/plain and marked
+    # nosniff, so a browser never renders an upload as a page.
+    paper = create_paper(api, create_binder(api)["id"])
+    html_bytes = b"<html><script>alert(1)</script></html>"
+    (attachment,) = upload(api, paper["id"], "notes.txt", html_bytes)["attachments"]
+    download = api.get(f"/api/attachments/{attachment['id']}/content")
+    assert download.status_code == 200
+    assert download.content == html_bytes  # bytes are never altered
+    assert download.headers["content-type"].startswith("text/plain")
+    assert download.headers["x-content-type-options"] == "nosniff"
+    assert download.headers["content-disposition"].startswith("attachment;")
 
 
 def test_files_live_under_the_store_by_hash_outside_any_served_folder(api: TestClient) -> None:

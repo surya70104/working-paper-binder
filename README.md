@@ -222,8 +222,14 @@ retention.
 - **Retention**: purge is refused before the retention date. After it, purge destroys the
   attachment content and records the purge; paper and version rows stay with their hashes
   (D18). **The content is purged; the metadata remains.**
-- **Produce file**: one zip with the manifest, the binder, the audit trail, every paper,
-  version and attachment in native format, and a checksum list (D19).
+- **Produce file**: one zip with the manifest, the binder, the audit trail (binder events
+  and every review-note step), every paper with its versions, review notes and attachments
+  in native format, and a checksum list (D19, D22). Paper folders are made unique even when
+  two references sanitise alike. Production is refused between an amendment and the next
+  re-assembly, because the recorded manifest would no longer describe the file; the Assembly
+  screen says so and withholds the link.
+- **Attachment downloads** carry `X-Content-Type-Options: nosniff` so a browser never
+  guesses a type from the bytes.
 - The **Assembly & retention** screen (spec screen 5) is reached from the Binder screen.
 
 How Stage 6 is verified: `tests\test_api_attachments.py`, `tests\test_api_assembly.py` and

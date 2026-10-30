@@ -36,6 +36,9 @@ class AssemblyStatusOut(BaseModel):
     assembly_hash: str | None
     retention_until: date | None
     purge_allowed: bool
+    # False between an amendment and the next re-assembly: the recorded manifest no longer
+    # describes the file, so production is refused until it is re-assembled.
+    matches_recorded_manifest: bool
     blockers: list[BlockerOut]
     not_checked: list[str]
     manifest: dict[str, Any] | None
@@ -50,8 +53,10 @@ class AssemblyStatusOut(BaseModel):
         manifest: dict[str, Any] | None,
         history: list[BinderEvent],
         today: date,
+        matches_recorded_manifest: bool,
     ) -> AssemblyStatusOut:
         return cls(
+            matches_recorded_manifest=matches_recorded_manifest,
             state=binder.state,
             report_date=binder.report_date,
             assembly_due=binder.assembly_due,
