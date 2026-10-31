@@ -153,10 +153,18 @@ manifest, spec 3F) arrives with the assembly stage, since it needs the manifest.
 The four templates are JSON files in `oak_binder/templates`, one per engagement type,
 validated on load. Each lists the spec's standard sections with the spec's names, and one
 required paper per section the spec names (acceptance, planning and risk, materiality,
-completion, report and opinion, EQR), with the SA numbers for those subjects. D–T carry no
-required papers: the spec names no areas, and lead schedules come from the Spine in Pass 2.
-Each file is marked draft for chartered accountant review before live use; no audit
-content beyond the spec's own words was invented.
+completion, report and opinion, EQR). D–T carry no required papers: the spec names no
+areas, and lead schedules come from the Spine in Pass 2. Each file is marked draft for
+chartered accountant review before live use; no audit content beyond the spec's own words
+was invented.
+
+*31 Oct 2026.* The SA numbers the required papers had carried since this decision were
+removed: they came from general knowledge of the standards, not from the specification, and
+the differences between engagement types were unexplained. They are held for the chartered
+accountant in `docs/SA_REFERENCES_FOR_CA_REVIEW.md`; the loader now also reports required
+papers without references as a placeholder. `python -m oak_binder.templates_check` checks
+the shipped files or draft files by path, and `docs/TEMPLATE_AUTHORING.md` explains the
+format and what remains the firm's to supply.
 
 Completeness (spec 3A) counts required references that have no paper at all. Papers are
 not created automatically from the template: the index shows the empty slot, and creating
@@ -437,6 +445,13 @@ the data allows:
   references, with their check result, as `papers/<folder>/cross_references.json`.
 - The cross-reference **map** screen (spec screen 4, "FS line to paper to document") stays
   Pass 2 with the Spine, as spec 6 places it.
+- **"Superseded paper" (31 Oct 2026).** Papers are never deleted or replaced here, so the
+  only reading the data supports is a target paper whose content changed after the
+  reference was made. That is now surfaced on the reference, on the screen and in the
+  archive, as information: the content hash of the target's version at the time of the
+  reference is compared with its current version, so a review or sign-off of unchanged
+  content does not count. It is not an assembly blocker; whether it should be is the
+  senior's call (`docs/DECISIONS_PENDING.md`, item 5).
 
 ## D27 · Google Drive is the vault — 30 Oct 2026
 

@@ -159,6 +159,7 @@ def _xrefs_for_archive(session: Session, binder: Binder, paper: Wp) -> list[dict
                 "created_at": x.created_at,
                 "broken": xref_service.check(session, binder, x),
                 "checked": x.to_fs_line is None,
+                "target_amended": xref_service.target_amended(session, x),
             }
         )
     return entries

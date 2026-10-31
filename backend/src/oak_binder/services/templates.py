@@ -10,8 +10,9 @@ What the specification fixes, and the loader enforces:
   title, and SA references (spec 3B).
 
 What the specification leaves to the firm, and the loader only reports (``placeholders``):
-the names of the financial statement areas D-T, and which papers each engagement type
-requires. Until a chartered accountant supplies those, every file is marked draft.
+the names of the financial statement areas D-T, which papers each engagement type
+requires, and the SA references those papers carry. Until a chartered accountant supplies
+those, every file is marked draft. See docs/TEMPLATE_AUTHORING.md.
 """
 
 from __future__ import annotations
@@ -91,6 +92,12 @@ class IndexTemplate:
             findings.append(
                 "no required paper in any financial statement area D-T; lead schedules per "
                 "area are not defined"
+            )
+        without_refs = [r.ref for r in self.required if not r.sa_refs]
+        if without_refs:
+            findings.append(
+                f"no SA references on required papers {', '.join(without_refs)}; the "
+                "chartered accountant's mapping is not set"
             )
         if self.draft:
             findings.append("marked draft: not yet reviewed by a chartered accountant")

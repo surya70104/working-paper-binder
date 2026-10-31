@@ -13,6 +13,11 @@ Broken references are detected wherever the data allows:
   only attachment that carried it is removed, the reference is broken and blocks assembly;
 - a Spine line cannot be checked: the Spine is not part of this product (D21). Those
   references are listed as *not checked*, never counted as clear.
+
+Surfaced as information, never as a blocker (spec 3E "superseded paper", pending the
+senior's reading; D26): a paper target whose content has changed since the reference was
+made, found by comparing the content hash of the target's version at that time with its
+current version. Sign-off steps copy content, so only a real change counts.
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ from sqlalchemy.orm import Session
 from oak_binder.errors import Conflict, Invalid, NotFound
 from oak_binder.models import Binder, BinderState, Wp, WpAttachment, Xref
 from oak_binder.models.xref import Direction
+from oak_binder.services import papers as paper_service
 
 MAX_FS_LINE = 200
 
@@ -199,6 +205,34 @@ def check(session: Session, binder: Binder, xref: Xref) -> str | None:
             return "no paper of this binder carries that document any more"
         return None
     return None
+
+
+def target_amended(session: Session, xref: Xref) -> str | None:
+    """How the referenced paper has changed since the reference was made, or None. Only a
+    paper target can change; the comparison is by content hash, so a review or sign-off of
+    the same content does not count."""
+    if xref.to_wp is None:
+        return None
+    target = session.get(Wp, xref.to_wp)
+    if target is None:
+        return None
+    rows = paper_service.versions(session, target)
+    if not rows:
+        return None
+    current = rows[-1]
+    before = [v for v in rows if v.prepared_at <= xref.created_at]
+    if not before:
+        return (
+            f"paper {target.ref} had no prepared version when this reference was made; it "
+            f"is now at version {current.version}"
+        )
+    then = before[-1]
+    if then.content_hash == current.content_hash:
+        return None
+    return (
+        f"paper {target.ref} has been amended since this reference was made "
+        f"(version {then.version} → {current.version})"
+    )
 
 
 def broken(session: Session, binder: Binder) -> list[Broken]:

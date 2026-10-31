@@ -68,6 +68,11 @@ function Row({
     <li className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2" data-testid="xref">
       <span>
         {left} {arrow} {right}
+        {x.target_amended ? (
+          <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900" data-testid="xref-amended">
+            {x.target_amended}
+          </span>
+        ) : null}
         {x.broken ? (
           <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-800" data-testid="xref-broken">
             broken: {x.broken}

@@ -120,6 +120,17 @@ ENG-2026-001 through the API).
    screen, generated papers, discussions and departures logs, configurable review levels,
    WorkMind papers.
 
+## 6a. Independent follow-up (31 October 2026)
+
+Done without senior or firm input, adding no audit content: a template authoring guide
+(`docs/TEMPLATE_AUTHORING.md`); a template check command
+(`python -m oak_binder.templates_check`); the unconfirmed SA references removed from the four
+templates and held in `docs/SA_REFERENCES_FOR_CA_REVIEW.md`; informational detection of a
+cross-reference target amended since the reference was made, never a blocker; and the
+one-page `docs/DECISIONS_PENDING.md`. The cross-reference direction and the access log are
+unchanged. Backend 233 passed, 1 skipped; frontend 48 passed; lint, mypy strict, typecheck
+and build clean. Not committed.
+
 ## 7. Safety record
 
 - Live `oak_binder`: 0 tables, no `alembic_version`, confirmed by read-only probe after the

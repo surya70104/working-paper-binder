@@ -21,7 +21,7 @@ Materiality, Sampling and the vault is Pass 2 work and will go through APIs only
 | `backend/src/oak_binder/schemas/` | Request and response shapes |
 | `backend/src/oak_binder/api/` | Routers: binders, working papers, attachments, assembly, export |
 | `backend/src/oak_binder/services/` | Templates, completeness, sign-off, assembly, retention, produce file |
-| `backend/src/oak_binder/templates/` | Index templates per engagement type, as data |
+| `backend/src/oak_binder/templates/` | Index templates per engagement type, as data; authoring guide in `docs/TEMPLATE_AUTHORING.md` |
 | `backend/alembic/` | Migrations, including the append-only triggers |
 | `backend/tests/` | Acceptance tests from spec §8, unit, database and API tests |
 | `frontend/` | React · TypeScript · Vite · Tailwind · vitest · marked + DOMPurify for markdown |
@@ -90,6 +90,7 @@ Then, from `D:\WORKING PAPER BINDER\backend`:
 | Format check | `.venv\Scripts\python.exe -m ruff format --check .` |
 | Type check | `.venv\Scripts\python.exe -m mypy` |
 | Show migration SQL without connecting | `.venv\Scripts\python.exe -m alembic upgrade head --sql` |
+| Check the index template files (or draft files by path) | `.venv\Scripts\python.exe -m oak_binder.templates_check` |
 | Run the API on port 8001 | `.venv\Scripts\python.exe -m uvicorn oak_binder.main:create_app --factory --reload --port 8001` |
 
 The health check is at <http://localhost:8001/api/health> and the interactive API page at
@@ -314,7 +315,9 @@ are added and removed while the binder is open and are frozen with the file at a
 target that no paper of the binder carries any more is broken; a paper target is checked to
 be a paper of the same binder; an FS-line target cannot be checked and is listed as *not
 checked*. References are not part of the manifest hash, so an already-assembled file still
-matches its recorded manifest after migration 0005. Decision D26; tests in
+matches its recorded manifest after migration 0005. A paper target whose content changed
+since the reference was made is flagged on the reference as information (spec §3E
+"superseded", reading pending with the senior), never as a blocker. Decision D26; tests in
 `tests\test_api_xrefs.py` and `tests\test_db_rules_xref.py`.
 
 ### Access log
@@ -362,7 +365,10 @@ Recorded in full as decision D16 in [docs/architecture.md](docs/architecture.md)
 
 - **Review notes** are now built (migration 0003, D21); the earlier stub is gone.
 - **Configurable review levels** beyond preparer and reviewer (spec §3D) are Pass 2.
-- **Template content** is placeholder-level pending chartered accountant review. Section
+- **Template content** is placeholder-level pending chartered accountant review; the
+  authoring guide is `docs/TEMPLATE_AUTHORING.md`, the previously seeded SA references are
+  held for review in `docs/SA_REFERENCES_FOR_CA_REVIEW.md`, and every open decision is on
+  one page in `docs/DECISIONS_PENDING.md`. Section
   names and the six required papers come from the specification's own words; areas D to T
   are unnamed and all four templates are nearly identical.
 - **One development identity** in `dev` mode (D8). Preparer, reviewer and signer are whatever

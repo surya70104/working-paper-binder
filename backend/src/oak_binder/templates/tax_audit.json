@@ -1,7 +1,7 @@
 {
   "name": "tax_audit",
   "label": "Tax audit",
-  "status": "draft: section names and required papers are those the specification names (spec 3A); the list is for chartered accountant review before live use",
+  "status": "draft: section names and required papers are those the specification names (spec 3A); SA references await chartered accountant confirmation (docs/SA_REFERENCES_FOR_CA_REVIEW.md); the list is for chartered accountant review before live use",
   "sections": [
     {"code": "A", "name": "Acceptance"},
     {"code": "B", "name": "Planning and risk"},
@@ -28,11 +28,11 @@
     {"code": "Z", "name": "EQR"}
   ],
   "required": [
-    {"ref": "A-1", "section": "A", "title": "Acceptance and continuance", "sa_refs": ["SA 210", "SA 220"]},
-    {"ref": "B-1", "section": "B", "title": "Planning and risk assessment", "sa_refs": ["SA 300", "SA 315"]},
-    {"ref": "C-1", "section": "C", "title": "Materiality memo", "sa_refs": ["SA 320"]},
+    {"ref": "A-1", "section": "A", "title": "Acceptance and continuance", "sa_refs": []},
+    {"ref": "B-1", "section": "B", "title": "Planning and risk assessment", "sa_refs": []},
+    {"ref": "C-1", "section": "C", "title": "Materiality memo", "sa_refs": []},
     {"ref": "W-1", "section": "W", "title": "Completion", "sa_refs": []},
     {"ref": "X-1", "section": "X", "title": "Report and opinion", "sa_refs": []},
-    {"ref": "Z-1", "section": "Z", "title": "Engagement quality review", "sa_refs": ["SA 220"]}
+    {"ref": "Z-1", "section": "Z", "title": "Engagement quality review", "sa_refs": []}
   ]
 }

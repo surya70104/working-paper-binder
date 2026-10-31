@@ -77,6 +77,8 @@ export type Xref = {
   created_at: string;
   broken: string | null;
   checked: boolean;
+  // Information only: the target paper's content changed since the reference was made.
+  target_amended: string | null;
 };
 
 export type XrefCreate = {

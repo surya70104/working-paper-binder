@@ -12,8 +12,17 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import PREPARER, act_as
-from tests.helpers import PARTNER, PDF, complete_binder, create_binder, create_paper, upload
+from tests.conftest import PREPARER, REVIEWER, act_as
+from tests.helpers import (
+    PARTNER,
+    PDF,
+    complete_binder,
+    create_binder,
+    create_paper,
+    full_chain,
+    step,
+    upload,
+)
 
 pytestmark = pytest.mark.db
 
@@ -124,6 +133,52 @@ def test_a_document_reference_breaks_when_the_document_leaves_the_binder(api: Te
     assert api.delete(f"/api/xrefs/{ref['id']}").status_code == 204
     assert xrefs_of(api, cash["id"]) == []
     assert api.delete(f"/api/xrefs/{ref['id']}").status_code == 404
+
+
+def test_a_target_amended_after_the_reference_is_surfaced_but_never_blocks(
+    api: TestClient,
+) -> None:
+    binder = create_binder(api, report_date="2026-09-30")
+    cash = create_paper(api, binder["id"], ref="D-1", section="D", title="Cash")
+    bank = create_paper(api, binder["id"], ref="D-2", section="D", title="Bank")
+    full_chain(api, bank["id"])  # D-2 signed off at version 3
+    [ref] = add(api, cash["id"], to_wp=bank["id"], direction="to")["xrefs"]
+    assert ref["target_amended"] is None
+
+    # A content change on the target, then a new prepared version: surfaced.
+    act_as(api, PREPARER)
+    edited = api.patch(f"/api/papers/{bank['id']}", json={"result": "Reconciled to the cent"})
+    assert edited.status_code == 200, edited.text
+    step(api, bank["id"], "prepare")
+    [ref] = xrefs_of(api, cash["id"])
+    assert ref["target_amended"] == (
+        "paper D-2 has been amended since this reference was made (version 3 → 4)"
+    )
+    assert ref["broken"] is None
+    assert ("broken_reference", "D-1") not in blockers(api, binder["id"])
+
+    # The target's own view of the same reference carries the note too, and a later
+    # review or sign-off of the changed content does not alter it.
+    step(api, bank["id"], "submit")
+    act_as(api, REVIEWER)
+    step(api, bank["id"], "review")
+    [seen] = xrefs_of(api, bank["id"])
+    assert "version 3 → 5" in (seen["target_amended"] or "")
+
+    # A reference made to a paper that has not been prepared yet says so once it is.
+    note = create_paper(api, binder["id"], ref="D-3", section="D", title="Notes")
+    [fresh] = [
+        x
+        for x in add(api, cash["id"], to_wp=note["id"], direction="to")["xrefs"]
+        if x["to_ref"] == "D-3"
+    ]
+    assert fresh["target_amended"] is None
+    act_as(api, PREPARER)
+    step(api, note["id"], "prepare")
+    fresh = next(x for x in xrefs_of(api, cash["id"]) if x["to_ref"] == "D-3")
+    assert fresh["target_amended"] == (
+        "paper D-3 had no prepared version when this reference was made; it is now at version 1"
+    )
 
 
 def test_fs_line_references_are_reported_as_not_checked(api: TestClient) -> None:

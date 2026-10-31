@@ -27,6 +27,7 @@ const outToBank: Xref = {
   created_at: "2026-10-30T09:00:00Z",
   broken: null,
   checked: true,
+  target_amended: null,
 };
 
 const inFromLead: Xref = {
@@ -59,6 +60,14 @@ const linkedDoc: Xref = {
   to_attachment_ref: "D-2",
 };
 
+const amendedTarget: Xref = {
+  ...outToBank,
+  id: "x6",
+  to_wp: "p4",
+  to_ref: "D-4",
+  target_amended: "paper D-4 has been amended since this reference was made (version 2 → 3)",
+};
+
 const brokenDoc: Xref = {
   ...outToBank,
   id: "x4",
@@ -71,14 +80,14 @@ const brokenDoc: Xref = {
 test("references are listed in and out, with broken and unchecked ones marked", async () => {
   mockApi({
     "GET /api/papers/p1/review-notes": [],
-    "GET /api/papers/p1": paperFixture({ xrefs: [outToBank, inFromLead, fsLine, brokenDoc, linkedDoc] }),
+    "GET /api/papers/p1": paperFixture({ xrefs: [outToBank, inFromLead, fsLine, brokenDoc, linkedDoc, amendedTarget] }),
     "GET /api/binders/b1": binderFixture(),
   });
   render(<PaperPage id="p1" />);
   await screen.findByRole("heading", { name: /Cross-references/ });
   expect(screen.getByTestId("xref-summary")).toHaveTextContent("1 broken — blocks assembly");
   const rows = screen.getAllByTestId("xref");
-  expect(rows).toHaveLength(5);
+  expect(rows).toHaveLength(6);
   expect(rows[0]).toHaveTextContent("this paper → D-2");
   expect(rows[0]?.querySelector("a")).toHaveAttribute("href", "#/papers/p2");
   expect(rows[1]).toHaveTextContent("this paper → FS line “Cash and cash equivalents”");
@@ -94,10 +103,15 @@ test("references are listed in and out, with broken and unchecked ones marked", 
     "/api/attachments/a9/content",
   );
   // The incoming one is read from this paper: D-L refers to it.
-  expect(rows[4]).toHaveTextContent("D-L → this paper");
-  expect(rows[4]?.querySelector("a")).toHaveAttribute("href", "#/papers/p3");
+  // Outgoing rows come first (five of them); the incoming one follows.
+  expect(rows[4]).toHaveTextContent("this paper → D-4");
+  expect(rows[5]).toHaveTextContent("D-L → this paper");
+  expect(rows[5]?.querySelector("a")).toHaveAttribute("href", "#/papers/p3");
+  // An amended target is information, shown on the row, never a blocker.
+  expect(screen.getByTestId("xref-amended")).toHaveTextContent("amended since this reference was made (version 2 → 3)");
+  expect(screen.getByTestId("xref-summary")).toHaveTextContent("1 broken — blocks assembly");
   // Only references written on this paper can be removed from here.
-  expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(4);
+  expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(5);
 });
 
 test("adding a reference to another paper posts one target and reloads the paper", async () => {

@@ -38,6 +38,9 @@ class XrefOut(BaseModel):
     # "not checked" for an FS line, since the Spine does not exist here (D21).
     broken: str | None
     checked: bool
+    # Information only (spec 3E "superseded", reading pending): the target paper's content
+    # has changed since this reference was made. Never a blocker.
+    target_amended: str | None
 
     @classmethod
     def build(cls, session: Session, binder: Binder, paper: Wp, xref: Xref) -> XrefOut:
@@ -66,4 +69,5 @@ class XrefOut(BaseModel):
             created_at=xref.created_at,
             broken=xrefs.check(session, binder, xref),
             checked=xref.to_fs_line is None,
+            target_amended=xrefs.target_amended(session, xref),
         )
