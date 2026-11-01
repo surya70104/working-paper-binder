@@ -27,6 +27,7 @@
     {"code": "X", "name": "Report and opinion"},
     {"code": "Z", "name": "EQR"}
   ],
+  "areas": {},
   "required": [
     {"ref": "A-1", "section": "A", "title": "Acceptance and continuance", "sa_refs": []},
     {"ref": "B-1", "section": "B", "title": "Planning and risk assessment", "sa_refs": []},

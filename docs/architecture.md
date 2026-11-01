@@ -177,14 +177,14 @@ Recorded so that the code, the README and the status report say the same thing.
 | Requirement | Spec | Deferred to | Depends on |
 |---|---|---|---|
 | An open review note blocks sign-off | 3D, 8.2 | Done (D21, migration 0003) | — |
-| Review levels preparer → senior → manager → partner → EQR, configurable per engagement | 3D | Pass 2 | A per-binder levels list and a sign-off record per level. Pass 1 has the two sign-offs spec 6 names plus the final lock. |
+| Review levels preparer → senior → manager → partner → EQR, configurable per engagement | 3D | Done (D33, migration 0009): a per-binder ordered list, the preparer first from the prepared version, one append-only review row per level and version, sign-off after the last level, the list frozen once a level review exists | — |
 | Required papers per engagement type, and the names of areas D–T | 3A | Production hardening: the specification carries no names for D–T and no per-type lists, so nothing more can be filled from it (re-checked 30 Oct 2026) | Chartered accountant review of the four template files; the mechanism is complete and reports the placeholders. |
 | Real authentication; distinct preparer and reviewer identities | 7, D8 | Done (D24): `OAK_AUTH=header` trusts an authenticating proxy; production refuses `dev` | The firm's choice of proxy or identity provider; nothing in the Binder depends on it. |
 | Markdown rendering of paper fields | 7 | Done (Stage 5 follow-up) | `marked` renders, `DOMPurify` sanitises every fragment before it reaches the DOM; tests cover rendering and neutralised script, handlers, `javascript:` links, frames, forms and styles. |
-| Lead schedules tying to the Spine, with papers beneath them | 3A, 3C | Pass 2 | The Spine integration. |
+| Lead schedules tying to the Spine, with papers beneath them | 3A, 3C | Done (D32): generated per mapped area from the linked, locked Spine version, with FS-line references so the map draws the chain; the adjustment chain likewise | The firm's area map and area names (TEMPLATE_AUTHORING items 1–2): shipped templates carry none, so no lead schedule can be generated until a map is entered. |
 | Attachments, assembly, manifest, retention, produce-file | 3B, 3F, 3G, 8.3–8.7 | Done in Stage 6 (D17–D20) | — |
 | Attachments "from the vault" | 6 | Done (D27): Google Drive adapter behind the D23 protocol; vault mode off until the consent, folder check and migration have run | The firm's one-time consent and the consent screen's production status. |
-| Broken-reference blocker on assembly | 3E, 3F, 8.3 | Done where the data allows (D26, migration 0005): paper and document targets are checked and a broken one blocks by name; FS-line targets are *not checked* until the Spine exists | The Spine, for FS lines. |
+| Broken-reference blocker on assembly | 3E, 3F, 8.3 | Done (D26, D30): paper, document and, for a binder linked to a Spine version, FS-line targets are checked and a broken one blocks by name; FS lines of an unlinked binder stay *not checked* | — |
 | Access log: who opened the file after assembly | 3H, 4 | Done (D25, migration 0004) | — |
 
 ## D17 · Stage 6: attachments, assembly, amendments — 29 Oct 2026
@@ -505,6 +505,332 @@ no recorded assembly hash changes. Local files are kept as a second copy. The li
 
 **Failure.** Transport faults, quota refusals and 5xx answers become ``StoreUnavailable``
 (HTTP 503): an upload or a production fails whole, never half-written.
+
+## D28 · Pass 2 Stage A: the discussions and departures logs — 31 Oct 2026
+
+Spec 2 and 3H require a discussions log ("significant matters, with whom, when. Including
+TCWG") and a departures log ("requirement, reason, alternative procedure"); spec 4 gives the
+two records field for field and lists both as append-only. Built as migration 0006 with
+exactly those fields plus ``recorded_by`` and ``recorded_at``, append-only by the same
+trigger and grants as ``wp_version``.
+
+Decisions taken with the engagement lead on 31 Oct 2026:
+
+- **Entries are allowed after assembly** and follow the post-assembly rule (spec 3F, 8.4):
+  a reason is required, an ``amended`` event records author, date and reason, and the file
+  must be re-assembled before it is produced again. The reason lives on the event, not on
+  the record, so the two tables stay as spec 4 names them.
+- **Re-assembly is forced by the manifest, not by a flag.** The manifest lists the logs,
+  entry by entry, so a new entry changes the file hash, ``matches_recorded_manifest`` turns
+  false, production is refused and ``assemble`` accepts the re-assembly. The keys appear
+  only once any entry exists, so every file assembled before this stage keeps the manifest
+  and hash it recorded; the demo binder still verifies.
+- **TCWG is a role written after the participant's name**, for example "R. Mehta (TCWG,
+  Audit Committee Chair)". The spec defines no structure for it; no field was added.
+- ``outcome`` and ``approved_by`` may be empty when an entry is recorded, since an outcome
+  or an approval may follow; because entries are never edited, the later fact is a new entry.
+- A purged binder takes no entries. Reads of an assembled file's logs are access-logged
+  (``discussions``, ``departures``). The archive carries both logs as their own members.
+
+## D29 · Pass 2 Stage B: the Financial Spine link — 31 Oct 2026
+
+Spec 3A ties lead schedules to the Financial Spine; spec 3C has the Spine produce lead
+schedules and the adjustment chain; spec 3E names financial-statement lines as reference
+targets. The Spine exists (`D:\CAF`, `oak_spine`, a FastAPI service on port 8000 with no
+authentication); the other source modules do not. Stage B is the link, nothing more.
+
+Decisions taken with the engagement lead on 31 Oct 2026:
+
+- **One binder, one engagement, one version.** Two nullable UUID columns on `binder`
+  (migration 0007), no foreign keys (the ids belong to the Spine's database), one check that
+  a version needs an engagement. Existing binders are untouched. Several binders may point
+  at one Spine engagement.
+- **Read-only over HTTP.** `services/spine_client.py` is GET-only; the test double records
+  every call and the tests assert no other verb is ever sent. The Binder never imports Spine
+  code or reads its database. `OAK_SPINE_URL` unset means no Spine; features then say so.
+- **Transport.** 10 s connect, 30 s read. Production requires `https://` unless the Spine
+  is on the loopback interface. An optional bearer credential (`OAK_SPINE_CREDENTIAL`) is
+  sent when set and redacted everywhere; the Spine has no authentication today.
+- **Errors mapped once.** Transport faults, timeouts, 429 and 5xx become `SpineUnavailable`
+  (503); 404 becomes `NotFound` with the Spine's message; 401/403 says the credential was
+  refused; other 4xx become `Invalid`; a non-JSON body is "an unexpected answer".
+- **Linking is verified against the Spine**: the engagement must exist and the version must
+  belong to it. The link may be set, changed or cleared while the binder is open; clearing
+  the engagement clears the version. After assembly it is frozen with the file.
+- **An unlocked version may be linked while the work goes on, but assembly needs a locked
+  one.** `spine_version_unlocked` is a named blocker; so are `spine_version_missing` (the
+  Spine no longer has it), `spine_unreachable` (it cannot be read) and
+  `spine_version_not_verified` (a version is linked but no Spine is configured). Never
+  silently clear.
+- **The manifest records the link** (`spine: {engagement_id, version_id}`) only when one
+  exists, so every file assembled without a link keeps its recorded hash. The manifest stays
+  deterministic and needs no network; the assembled event records the version's lock hash
+  and time, read from the Spine at that moment.
+- Stage C will make `to_fs_line` name the Spine's stable presentation-line `head_id` for a
+  linked binder, with the label kept for display; the client already exposes both.
+
+## D30 · Pass 2 Stage C: FS-line checks and the cross-reference map — 31 Oct 2026
+
+Spec 3E: "financial statement line → lead schedule → working paper → source document,
+clickable in both directions", and broken references block assembly; spec 5.4: the map
+screen "with broken links flagged". With the Spine link (D29) the FS-line end of the chain
+can now be checked. No schema change: ``xref.to_fs_line`` already holds text, and for a
+linked binder that text is the Spine's stable presentation-line ``head_id``.
+
+- **Lines come from the linked version's presentation** (`services/fs_lines.py`), keyed by
+  ``head_id``, label kept for display. They are available only when the binder is linked
+  to a version, the Spine can be read, and the statements are ready; otherwise the reason is
+  stated and FS-line references are *not checked*, as before.
+- **Once lines are available, a new FS-line reference must name one of them** (422
+  otherwise, with the lines endpoint named), and an existing reference that names no line,
+  whether free text from before the link or a line the version lost, is a ``broken_reference``
+  blocker by the referring paper. The Assembly screen's not-checked list is empty for such a
+  binder; for an unlinked or unreadable one it says why, with the count.
+- **The map is built from the references alone.** A paper that refers to an FS line is the
+  lead schedule for that line (spec 3A); papers that refer to the lead schedule sit beneath
+  it, to a depth of three; each paper's document references are its source documents. Papers
+  deeper than the three drawn levels are listed apart as *further down a chain* (their links
+  checked and counted like any other), and papers reachable from no line apart from those, so
+  nothing is hidden and nothing is mislabelled. Every node links to its
+  paper or attachment, so the chain is clickable both ways. Broken and amended links carry
+  the same reasons the paper screen shows; the counts head the screen.
+- Reads of the lines and the map on an assembled file are access-logged (``FS lines``,
+  ``cross-reference map``). **Assembly records the lines it verified against** with the
+  assembled event (``details.fs_lines``: version id, lock state, every line with its label
+  and figures), outside the manifest so the file hash is unchanged. Production reads that
+  record, so the archive's per-paper cross-reference records carry the line label and the
+  check result exactly as verified, whether or not the Spine answers at the time. A binder
+  assembled before the record existed, or without a readable Spine version, reads the Spine
+  at production as before. The blocker and the screen name a broken FS-line target once,
+  followed by the reason.
+- Lead schedules generated from the Spine (spec 3C) arrived with Stage E (D32); a hand-made
+  paper that refers to a line is still drawn as its lead schedule.
+
+## D31 · Pass 2 Stage D: generated-paper intake — 31 Oct 2026
+
+Spec 3C: "A paper produced by a module arrives complete, with its inputs and its citations,
+and nobody retypes anything", with one line per source; spec 8.8: a generated sampling paper
+"carries its formula and its seed"; spec 7: conclusions are not drafted automatically. None of
+Materiality, Sampling, Analytical Review or WorkMind exists (CAF's D20 says as much for
+materiality), so the Binder defines the contract, checks presence and shape of exactly what
+the spec names, keeps the rest verbatim and assumes no semantics. Decisions taken after a
+conflict review against the spec (``docs/PASS2_STAGE_D_PLAN.md`` §11):
+
+- **One endpoint, one contract** (`schemas/generated.py`): the paper's fields plus a
+  ``generated`` block with source, module, run, time, ``inputs``, ``citations`` and one strict
+  source block (unknown keys refused). ``inputs`` and ``citations`` are opaque, size-capped.
+- **Arrives as a draft** (`services/generated.receive`): a person prepares and the chain
+  signs off, so 8.9's "user" is a person and the module is never ``prepared_by``.
+- **Provenance is an append-only record** (`wp_generation`, migration 0008): one row per
+  intake, with the module fields' content hash at intake. ``papers.snapshot`` embeds the latest
+  row as ``body["generated"]`` in every version, so the version hash covers the inputs and
+  citations and the archive carries them in ``versions/NNNN.json``; ``paper.json`` gains
+  ``generated_by``. Hand-made papers gain no key: no earlier hash moves.
+- **Module fields are locked** (``LOCKED_FIELDS``; `papers.refuse_locked`, also on
+  post-assembly amendments): "nobody retypes anything". The **conclusion stays a person's**;
+  Materiality, Sampling and Analytical Review may deliver one, WorkMind may not (spec 7).
+- **Per-source rules**: sampling's formula and seed must appear verbatim in the paper's text
+  ("printed on it"); the memo's Spine figures must come from the binder's linked version,
+  else refused; unlinked, they are kept and marked ``not_checked`` (the D30 pattern); the
+  variance paper names both periods and its thresholds; WorkMind names its run and source-row
+  citations, is validated in full, and is then **refused with 501** until the module exists
+  and an accepted run can be verified; ``spine`` is Stage E.
+- **One paper per run**: ``run_id`` required for WorkMind, optional otherwise, unique within
+  its source when given (partial unique index). **No intake after assembly**; regeneration of
+  an existing paper is Stage E's new-version-with-reason case (spec 3F).
+- **Who may deliver**: the authenticated identity is ``received_by``; an optional
+  ``OAK_INTAKE_CREDENTIAL`` bearer; under header auth only ``OAK_INTAKE_IDENTITIES``, none
+  listed meaning no intake. **Attachments** (decision 10, clarified after the attachment-
+  workflow investigation): Supporting attachments are uploaded separately through the existing attachment API after intake creates the draft paper, but before the preparer completes preparation. The preparer must be able to review the generated content and its supporting attachments before proceeding. An attachment row belongs to its paper (D17), so
+  nothing can attach before intake creates the paper; the files join version 1 at the
+  preparer's prepare. No staging table or second attachment lifecycle exists.
+- Screen 2 shows a read-only "Generated by" panel (source block, run, delivery, inputs and
+  citations behind a toggle) and disables the locked fields; screen 1 marks generated papers.
+
+## D32 · Pass 2 Stage E: papers the Financial Spine produces — 1 Nov 2026
+
+Spec 3A: "Lead schedule per area, tying to the Financial Spine, with the WPs beneath it"; spec
+3C: the Spine produces "Every lead schedule, and the adjustment chain"; spec 3E: the chain FS
+line → lead schedule → working paper → source document. Built in six steps (E1–E6; plan and
+history in ``docs/PASS2_STAGE_E_PLAN.md``) on the specification alone, since no further senior
+or chartered-accountant input was available: every open question was settled with the most
+conservative reading of the spec's words (plan §15) and each assumption is recorded in
+``docs/DECISIONS_PENDING.md`` (items 15–22). Nothing the firm has not supplied is invented.
+
+- **Two kinds of paper, pulled by a person** (`services/spine_papers.py`): one lead schedule
+  per mapped area D–T (`<area>-L`) and one adjustment chain per binder (`W-ADJ`, section W
+  Completion), generated from the binder's linked, **locked** Spine version only (decision 1:
+  a locked version has a hash and never changes, CAF D25). Both go through the Stage D intake
+  with ``source = "spine"`` and an internal flag the HTTP endpoint never sets, so the Stage D
+  guarantees hold and no outside caller can deliver a Spine paper. Any authenticated user may
+  generate (decision 11); the paper arrives as a draft and the ordinary chain signs it off.
+- **Figures exactly as served** (CAF D30 honoured): every amount is accepted only as the
+  Spine's string or as absent; the block (`schemas/generated.SpineBlock`) types figures as
+  text, so a number the Binder computed cannot enter it. Lines, ledgers, the Spine's own
+  per-head totals, the adjustments touching the area and the uncorrected schedule are rendered
+  into ``result`` without a sum, netting, rounding or comparison; a head with no ledger entry
+  or no served figure is described in those words ("no figure served") and never as nil or
+  zero (decision 13). ``population_sample`` is the one Binder-written sentence on a Spine
+  paper: the version's label, id and hash and counts of the rows served (never a figure), so
+  the paper says what it rests on; it is locked with the Spine's other fields.
+- **The area map is the firm's** (`services/templates.py` ``areas``, `services/area_map.py`):
+  head ids only, as the Spine's tree spells them; a listed head covers itself and every
+  descendant found exclusively through the ``parent`` field each head carries in
+  ``GET /api/tree``, never through the shape of an id (an earlier draft derived the parent from
+  the id's last dot; withdrawn). Validation: syntax at load; against the served tree, every id
+  exists, no overlap after expansion, and mappable heads in no area are reported. **Shipped
+  templates carry an empty map**, stated by name on the card, in the status and by
+  `templates_check` (which reads a tree only when given ``--tree FILE`` or ``--spine``).
+- **Locked fields narrower for Spine papers** (``SPINE_LOCKED_FIELDS``): the Spine produced
+  figures, not narrative, so ``objective`` and ``procedure`` are not locked and arrive empty
+  unless the template carries approved wording (decision 5); ``title``, ``section``,
+  ``sa_refs``, ``population_sample`` and ``result`` are locked; the conclusion is a person's.
+- **References the Binder writes** (FS lines from a lead schedule; working papers named by
+  adjustments, matched by exact text, decision 7) are created by ``oak_spine``; the person who
+  asked is the provenance row's ``received_by``. That marker, with the target's presence in an
+  earlier Spine block of the same paper, is the only reliable test of Binder ownership.
+- **Freshness** (`spine_papers.freshness`): the recorded version id and hash against the
+  binder's link and the Spine's current answer, ids and hashes only; ``current``, ``stale``
+  (re-linked, or hash moved) or ``not_checked`` (Spine unreachable), on the status, the paper
+  (``generated.freshness``) and the screens; filling it costs one Spine read of the linked
+  version each time a Spine paper is read, accepted so the paper screen has one source of
+  truth. A stale paper is **information, never a blocker**
+  (decision 8): the specification's four blockers stand; the assembly status's not-checked list
+  names it with both versions.
+- **Regeneration** (`spine_papers.regenerate`, open binders only, decision 15): rewrites the
+  Spine's fields, returns the paper to draft, appends a provenance row with the new run id,
+  keeps the person's objective, procedure and conclusion and every earlier version, and moves
+  only Binder-owned references whose target the new version lacks; everything else is kept and
+  a kept reference with a vanished target is listed for review. Added, removed, kept and
+  for-review targets are recorded in ``inputs.regeneration`` and returned. After assembly the
+  link is frozen (D29) and a locked version cannot change, so there is nothing to regenerate
+  from; the Pass 1 amendment path (spec 3F) is unchanged.
+- **One paper per run** (decision 14): run id ``<binder>/<version>/<hash>/<area|adjustments>``,
+  unique per binder under migration 0008's per-source index, so several binders may share a
+  version and a duplicate request names the existing paper.
+- **Screens**: the Binder screen's Spine papers card (areas, chain, states, reasons, generate)
+  and the generated panel's Spine block, freshness banner, Regenerate and reference changes.
+- **Decisions 1–15** (plan §15): locked only; ``<area>-L``; ``W-ADJ`` in W; figures in
+  provenance and markdown; objective and procedure unlocked and empty; regeneration as a new
+  row; exact-match references; stale as information; no archive summary member; the memo's
+  Spine figures left to the Materiality module; any authenticated user; person-triggered;
+  ledgerless areas still get a lead schedule; the run id above; no post-assembly regeneration.
+- **Limitations**: empty area maps and placeholder area names; no required lead schedule per
+  area in any template; empty wording slots; no SA references seeded. No schema change.
+
+## D33 · Pass 2 Stage F: review levels, configurable per engagement — 1 Nov 2026
+
+Spec 3D: "Levels: preparer → senior → manager → partner → EQR, configurable per engagement."
+Everything else that governs the build already stands: spec 3B's five statuses, spec 3D and
+8.9's "who, when, and which version" on every sign-off, 8.1 and 8.2 on sign-off, and spec 4's
+immutable ``wp_version`` with its single ``reviewed_by``. Built on migration 0009.
+
+- **The preparer is level one and is not a new record.** Spec 3B makes preparation the first
+  status transition and names "prepared by + date"; ``papers.prepare`` already writes the
+  preparer's identity, time and version into the immutable prepared version (D12, D14). Stage F
+  presents that row as the first step of the chain wherever the chain appears, refuses
+  "preparer" in the configuration, and writes no duplicate.
+- **One append-only row per level review** (`wp_review`: paper, the prepared version reviewed,
+  level, reviewer, time; unique per version and level). The existing review action records the
+  next pending level for the current prepared version; the paper stays ``in_review`` until the
+  last configured level, whose reviewer becomes the reviewed version's ``reviewed_by`` (spec 4's
+  single field read as the final reviewer). The sign-off step is untouched. A binder without
+  configured levels writes no row and runs the Pass 1 chain exactly as before.
+- **Configuration per binder** (``binder.review_levels``, nullable text array; null or empty
+  means the Pass 1 chain), changeable while the binder is open and no level review exists for
+  any of its papers. **Permanent freeze**: once one does, the service refuses (409) and a
+  database trigger (`oak_binder_review_levels_frozen`) refuses the update too, so a level can
+  never be removed under a paper mid-review (the case that motivated the rule: senior and
+  manager done, partner removed, paper reviewed without the partner). No unfreeze: a mistake
+  after the first review is completed as configured. After assembly the binder is frozen anyway.
+- **Cycles.** Level reviews belong to the prepared version they reviewed. An edit or amendment
+  returns the paper to draft; the next prepare starts a new cycle with no levels done, and the
+  earlier rows stay as history. The archive's per-paper ``reviews.json`` lists the configured
+  levels and one cycle per prepared or amended version: preparer, level reviews, reviewed and
+  signed-off versions. It is outside the manifest, so earlier assembly hashes stand.
+- **Screens**: the paper's sign-off panel shows the chain and labels the action with the next
+  level; the Binder screen's Review levels card edits the list while it may change.
+- **Decisions taken on the specification alone**: the preparer as the fixed first level; no role
+  enforcement, since identities are strings and no role model exists; no rule about one person
+  at several levels or the preparer reviewing, since the spec states none; freeze binder-wide at
+  the first level review; no template-level defaults; the archive member outside the manifest.
+- **Limitations**: roles are recorded, not verified; configured names are free text with the
+  spec's four offered as the placeholder; no default per engagement type.
+
+## D34 · Pass 2 Stage G: close-out — 1 Nov 2026
+
+Pass 2 as spec 6 lists it is built (D28–D33) and this decision closes it with one archive
+member, a verification of the whole, and the documentation brought level with the code. No
+schema change; migrations 0001–0009 untouched; nothing committed by the stage itself.
+
+- **`cross_reference_map.json` in the produce archive.** Spec 3E and screen 4 define the map
+  (FS line → lead schedule → working paper → source document, broken and amended links
+  flagged); spec 3G wants the complete file in native formats, and a map that lives only on a
+  screen is not in the file. The member is `XrefMapOut` as `GET /api/binders/{id}/xref-map`
+  serves it, built by the same `xref_map.build` from the recorded references and the FS lines
+  the assembly recorded (D30's `fs_lines` snapshot, with the Spine fallback only for a file
+  assembled before D30). So the member is byte-identical whether the Spine answers, fails,
+  times out or is not configured, and production never calls the Spine for it. It sits
+  outside the manifest and the file hash, like every Pass 2 member, so every earlier assembly
+  hash stands and `verify` is unchanged.
+- **The archive inventory, proven.** `tests/test_api_close_out.py` assembles a binder that
+  uses every Pass 2 feature (logs, Spine link, lead schedule and adjustment chain, a sampling
+  paper from the intake with its provenance, two review levels, references of every kind) and
+  checks that the archive carries manifest, binder, audit trail, access log, discussions,
+  departures, the map and checksums at the top, and per paper the record, every version with
+  the embedded provenance, review notes, the review chain and cross-references; that the map
+  equals the endpoint and is unchanged with the Spine down; and that the manifest and hash are
+  what assembly recorded.
+- **The blocker inventory is unchanged and now pinned by a test**: the spec's four
+  (`unsigned_paper`, `open_review_notes`, `broken_reference`, `missing_required_paper`),
+  D17's `report_not_dated`, and D29's four Spine-link kinds (`spine_version_unlocked`,
+  `spine_version_missing`, `spine_unreachable`, `spine_version_not_verified`). Stages C–G added
+  none; staleness, unmatched adjustment references and unchecked FS lines are information.
+- **Documentation corrected, not rewritten**: the Pass 2 plan's header no longer says nothing is
+  built and its open points record what was built; the README's stage table, layout table,
+  produce row and the "deferred" note; `DECISIONS_PENDING.md` separates what Pass 2 built from
+  what remains for the firm and the chartered accountant. `PASS2_COMPLETION_REPORT.md` is the
+  report, written to the Pass 1 report's pattern.
+- **Limitations carried forward, stated as such**: Materiality, Sampling and Analytical Review
+  exist as a contract only, no module is connected; WorkMind is refused; the shipped area maps
+  are empty and area names are placeholders, so no lead schedule can be generated until the
+  firm enters a map; no required lead schedule per area; empty wording slots; no SA references;
+  review-level roles are recorded, not enforced.
+
+## D35 · Post-Pass 2 follow-up: what could still be finished without the firm — 1 Nov 2026
+
+After Pass 2 closed (D34) the remaining items were sorted into what the project can finish on
+the specification alone and what needs the firm, a chartered accountant or a module that does
+not exist. Built here, all small and all without inventing content:
+
+- **SA references prefilled from the index** (spec 3B lists "SA reference(s)" among the
+  paper's fields; spec 3A's index names the required papers). The Binder screen's Create
+  action for a missing paper already prefilled reference, section and title; it now also
+  prefills the template's `sa_refs` into an editable field on the new-paper form and sends them
+  with the create request, which the backend already accepted. Shipped templates carry no
+  references, so today the field prefills empty; the mechanism waits for the chartered
+  accountant's list (DECISIONS_PENDING item 4). Tests on both sides; the three documents that
+  had said the copy was "not yet" made now describe the behaviour.
+- **Generated references in templates** (D32). A template may require `<area>-L` or `W-ADJ` so
+  that the generated lead schedule or adjustment chain fills the slot. The loader now refuses
+  such a reference in any section other than the one the Binder generates it in, by name,
+  since a paper there could never satisfy the requirement; the check command lists the
+  generated papers a template requires. No shipped file is affected.
+- **Review-level policy**: no enforcement was added. Who may review at which level is a firm
+  policy the specification does not state (assumptions 24–25); the exact questions are in
+  `docs/REVIEW_LEVEL_POLICY_REQUEST.md` and DECISIONS_PENDING items 29–31. The Binder would
+  build only what the answers require, with no defaults of its own.
+- **Vault**: the Google Drive adapter (D27) is complete and `OAK_STORE=vault` is the
+  development setting; the refresh token and client file are in `backend/secrets`, one local
+  attachment copy remains in `var/attachments`. No token was refreshed and nothing was deleted
+  in this follow-up; the firm's items 8–10 stand. `vault_login --check` reads the folder
+  through a short-lived access token held in memory and writes no file; it was not run because
+  it still exchanges the refresh token with Google, which the owner asked not to happen without
+  permission.
+- **Not built, and said so**: connections to Materiality, Sampling, Analytical Review and
+  WorkMind (the modules do not exist; the contract is `docs/GENERATED_PAPER_INTAKE.md`), the
+  templates' content and area maps (`docs/TEMPLATE_CONTENT_REQUEST.md`,
+  `docs/SPINE_TREE_REQUEST.md`), and anything that would encode a firm policy.
 
 ## D10 · Pass 1 first — 28 Oct 2026
 

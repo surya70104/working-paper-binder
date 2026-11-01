@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Form, Request, Response, UploadFile, status
 
-from oak_binder.api.deps import CurrentUser, DbSession, Now
+from oak_binder.api.deps import CurrentUser, DbSession, Now, Spine
 from oak_binder.api.papers import paper_out
 from oak_binder.models import BinderState
 from oak_binder.schemas.attachments import AttachmentOut
@@ -33,6 +33,7 @@ async def upload(
     session: DbSession,
     user: CurrentUser,
     now: Now,
+    spine: Spine,
     identifying_chars: Annotated[str | None, Form()] = None,
     amendment_reason: Annotated[str | None, Form()] = None,
 ) -> PaperOut:
@@ -65,7 +66,7 @@ async def upload(
             now=now,
             max_bytes=max_bytes,
         )
-    return paper_out(session, paper_id)
+    return paper_out(session, paper_id, spine)
 
 
 @router.get("/api/attachments/{attachment_id}")

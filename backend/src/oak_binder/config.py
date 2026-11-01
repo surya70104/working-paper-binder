@@ -11,6 +11,7 @@ from __future__ import annotations
 import ipaddress
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,6 +42,16 @@ def check_binder_url(url: str, *, allowed: frozenset[str], name: str) -> str:
             "the Binder never connects to any other database"
         )
     return url
+
+
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def spine_url_is_secure(url: str) -> bool:
+    """https anywhere, or plain http only to the loopback interface (D29)."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" or host in LOOPBACK_HOSTS or host.startswith("127.")
 
 
 class Settings(BaseSettings):
@@ -85,6 +96,20 @@ class Settings(BaseSettings):
     vault_credential: str | None = None
     vault_container: str | None = None
     vault_client_file: str | None = None
+    # The Financial Spine (D29): the service root, e.g. http://127.0.0.1:8000, read-only.
+    # Unset means no Spine: every Spine-dependent feature says so instead of failing. An
+    # optional bearer credential is sent when set; the Spine has no authentication today.
+    spine_url: str | None = None
+    spine_credential: str | None = None
+    # Generated-paper intake (D31). Under OAK_AUTH=header only the identities listed here,
+    # comma-separated, may deliver papers; none listed means no intake. An optional bearer
+    # the module must present on the intake endpoint. The provenance block's size cap.
+    intake_identities: str = ""
+    intake_credential: str | None = None
+    max_provenance_bytes: int = 1_048_576
+
+    def intake_identity_set(self) -> frozenset[str]:
+        return frozenset(p.strip() for p in self.intake_identities.split(",") if p.strip())
 
     @field_validator("database_url", "migration_database_url")
     @classmethod
@@ -93,6 +118,19 @@ class Settings(BaseSettings):
             return None
         name = f"OAK_{(info.field_name or 'database_url').upper()}"
         return check_binder_url(value, allowed=frozenset({APP_DATABASE, TEST_DATABASE}), name=name)
+
+    @field_validator("spine_url")
+    @classmethod
+    def _spine_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        parsed = urlparse(value.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError(
+                "OAK_SPINE_URL must be an http:// or https:// URL with a host, "
+                "for example http://127.0.0.1:8000"
+            )
+        return value.strip().rstrip("/")
 
     @field_validator("test_database_url", "test_app_database_url")
     @classmethod
@@ -162,6 +200,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OAK_TRUSTED_PROXIES must list the proxy's address(es) when OAK_ENV=production: "
                 "otherwise anyone who can reach the API can name themselves (architecture D24)"
+            )
+        if self.spine_url and not spine_url_is_secure(self.spine_url):
+            raise ValueError(
+                "OAK_SPINE_URL must use https:// when OAK_ENV=production unless the Spine is "
+                "on the loopback interface (architecture D29)"
             )
         if make_url(self.database_url).database != APP_DATABASE:
             raise ValueError(f"OAK_DATABASE_URL must name {APP_DATABASE} when OAK_ENV=production")

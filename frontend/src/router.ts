@@ -2,6 +2,7 @@
 //   #/                          binders
 //   #/binders/<id>              one binder: index tree, completeness, countdown
 //   #/binders/<id>/assembly     assembly and retention: blockers, manifest, produce, purge
+//   #/binders/<id>/xref-map     the cross-reference map: FS line to paper to document
 //   #/papers/<id>               one working paper: fields, attachments, versions, sign-off
 import { useEffect, useState } from "react";
 
@@ -10,12 +11,15 @@ export type Route =
   | { name: "binder"; id: string }
   | { name: "assembly"; id: string }
   | { name: "review-notes"; id: string }
+  | { name: "xref-map"; id: string }
   | { name: "paper"; id: string };
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, "");
   const assembly = /^\/binders\/([^/]+)\/assembly$/.exec(path);
   if (assembly?.[1]) return { name: "assembly", id: assembly[1] };
+  const map = /^\/binders\/([^/]+)\/xref-map$/.exec(path);
+  if (map?.[1]) return { name: "xref-map", id: map[1] };
   const notes = /^\/binders\/([^/]+)\/review-notes$/.exec(path);
   if (notes?.[1]) return { name: "review-notes", id: notes[1] };
   const binder = /^\/binders\/([^/]+)$/.exec(path);
@@ -35,6 +39,8 @@ export function href(route: Route): string {
       return `#/binders/${route.id}/assembly`;
     case "review-notes":
       return `#/binders/${route.id}/review-notes`;
+    case "xref-map":
+      return `#/binders/${route.id}/xref-map`;
     case "paper":
       return `#/papers/${route.id}`;
   }

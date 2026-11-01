@@ -7,14 +7,20 @@ from fastapi import APIRouter, Request, status
 from oak_binder.api.deps import DbSession, Now, Today
 from oak_binder.schemas.binders import BinderCreate, BinderOut, BinderPatch, BinderSummary
 from oak_binder.schemas.papers import PaperCreate, PaperOut
-from oak_binder.services import access, binders, papers
+from oak_binder.services import access, binders, papers, review_levels, spine_link
+from oak_binder.services.spine_client import SpineClient
 
 router = APIRouter(prefix="/api/binders", tags=["binders"])
 
 
 def _out(session: DbSession, binder_id: uuid.UUID, today: Today) -> BinderOut:
     binder = binders.get_binder(session, binder_id)
-    return BinderOut.build(binder, binders.build_index(session, binder), today)
+    return BinderOut.build(
+        binder,
+        binders.build_index(session, binder),
+        today,
+        review_levels.frozen(session, binder),
+    )
 
 
 @router.get("")
@@ -44,13 +50,28 @@ def get_binder(
 
 @router.patch("/{binder_id}")
 def patch_binder(
-    binder_id: uuid.UUID, payload: BinderPatch, session: DbSession, today: Today
+    binder_id: uuid.UUID,
+    payload: BinderPatch,
+    request: Request,
+    session: DbSession,
+    today: Today,
 ) -> BinderOut:
     binder = binders.get_binder(session, binder_id)
     changes = payload.model_dump(exclude_unset=True)
-    # Only a request that names report_date changes it; an empty PATCH changes nothing.
+    # Only a request that names a field changes it; an empty PATCH changes nothing.
     if "report_date" in changes:
         binders.set_report_date(session, binder, changes["report_date"])
+    if "review_levels" in changes:
+        review_levels.set_levels(session, binder, changes["review_levels"])
+    if "spine_engagement_id" in changes or "spine_version_id" in changes:
+        client: SpineClient | None = request.app.state.spine_client
+        spine_link.set_link(
+            session,
+            client,
+            binder,
+            engagement_id=changes.get("spine_engagement_id", binder.spine_engagement_id),
+            version_id=changes.get("spine_version_id", binder.spine_version_id),
+        )
     return _out(session, binder_id, today)
 
 

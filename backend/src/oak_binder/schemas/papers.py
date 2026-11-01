@@ -6,8 +6,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from oak_binder.models import Wp, WpAttachment, WpVersion
+from oak_binder.models import Wp, WpAttachment, WpGeneration, WpVersion
+from oak_binder.models.generation import locked_fields_for
 from oak_binder.schemas.attachments import AttachmentOut
+from oak_binder.schemas.generated import FreshnessOut, GenerationOut
+from oak_binder.schemas.review_levels import ReviewChainOut
 from oak_binder.schemas.xrefs import XrefOut
 
 
@@ -68,6 +71,8 @@ class PaperSummary(BaseModel):
     title: str
     status: str
     current_version: int | None
+    # Spec 3C: the source that generated the paper, or None for a hand-made one (D31).
+    generated_by: str | None = None
 
 
 class PaperOut(PaperSummary):
@@ -85,6 +90,10 @@ class PaperOut(PaperSummary):
     attachments: list[AttachmentOut]
     # Spec 3B: cross-references in and out, read from this paper.
     xrefs: list[XrefOut]
+    # Spec 3C: the provenance of a generated paper (D31); None for a hand-made one.
+    generated: GenerationOut | None = None
+    # Spec 3D: preparer, the binder's review levels in order, sign-off (Stage F, D33).
+    review_chain: ReviewChainOut | None = None
 
     @classmethod
     def build(
@@ -95,10 +104,20 @@ class PaperOut(PaperSummary):
         binder_state: str,
         open_review_notes: int = 0,
         xrefs: list[XrefOut] | None = None,
+        generation: WpGeneration | None = None,
+        freshness: FreshnessOut | None = None,
+        review_chain: ReviewChainOut | None = None,
     ) -> PaperOut:
         base = PaperSummary.model_validate(paper).model_dump()
+        base["generated_by"] = generation.source if generation else None
         return cls(
             **base,
+            review_chain=review_chain,
+            generated=GenerationOut.build(
+                generation, locked_fields_for(generation.source), freshness
+            )
+            if generation
+            else None,
             binder_id=paper.binder_id,
             sa_refs=list(paper.sa_refs),
             objective=paper.objective,

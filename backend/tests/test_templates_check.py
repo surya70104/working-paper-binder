@@ -54,3 +54,34 @@ def test_a_draft_file_is_checked_by_path_and_a_broken_one_refused(
     assert "tax_audit.json: REFUSED: template tax_audit: standard sections ['Z'] are missing" in out
     assert "internal.json: cannot read as JSON" in out
     assert "1 of 3 file(s) load" in out
+
+
+def test_generated_references_are_listed_and_refused_outside_their_section(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """D32/D35: a template may require the lead schedule and the adjustment chain the Binder
+    generates; the check lists them, and refuses one filed where it could never be generated."""
+    good = json.loads((TEMPLATES_DIR / "statutory.json").read_text(encoding="utf-8"))
+    good["required"] += [
+        {"ref": "D-L", "section": "D", "title": "Lead schedule", "sa_refs": []},
+        {"ref": "W-ADJ", "section": "W", "title": "Adjustment chain", "sa_refs": []},
+    ]
+    draft = tmp_path / "statutory.json"
+    draft.write_text(json.dumps(good), encoding="utf-8")
+    bad = json.loads((TEMPLATES_DIR / "bank_branch.json").read_text(encoding="utf-8"))
+    bad["required"].append({"ref": "D-L", "section": "E", "title": "Lead schedule", "sa_refs": []})
+    wrong = tmp_path / "bank_branch.json"
+    wrong.write_text(json.dumps(bad), encoding="utf-8")
+
+    code = templates_check.main([str(draft), str(wrong)])
+    assert code == 1
+    out = capsys.readouterr().out
+    assert (
+        "required papers the Binder generates (D32): D-L (lead schedule, area D), "
+        "W-ADJ (adjustment chain)" in out
+    )
+    assert (
+        "bank_branch.json: REFUSED: template bank_branch required paper D-L: the Binder "
+        "generates D-L in section D (D32), so it cannot be required in section E" in out
+    )
+    assert "1 of 2 file(s) load" in out

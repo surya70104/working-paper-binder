@@ -1,0 +1,33 @@
+{
+  "paper": {
+    "ref": "D-3",
+    "section": "D",
+    "title": "Revenue: sample of sales invoices",
+    "sa_refs": ["SA 530"],
+    "objective": "Test the occurrence and accuracy of recorded revenue by examining a sample of sales invoices.",
+    "procedure": "Monetary unit sampling over the sales register for FY2025-26; each selected invoice agreed to dispatch note, customer order and subsequent receipt.",
+    "population_sample": "Population: 1,284 sales invoices totalling 9,800,000.00 (sales register FY2025-26). Formula: interval = population_value / sample_size. Seed: 20261031. Sample size 60. Items selected: INV-0007, INV-0042, INV-0098, INV-0133 (and 56 more listed in the attached selection sheet).",
+    "result": "60 invoices examined; no exceptions.",
+    "conclusion": "Recorded revenue is supported by the sample; no misstatement projected."
+  },
+  "generated": {
+    "source": "sampling",
+    "module": "oak_sampling",
+    "module_version": "example",
+    "run_id": "sampling-run-example-001",
+    "generated_at": "2026-10-31T10:15:00+05:30",
+    "inputs": {
+      "population_value": "9800000.00",
+      "population_count": 1284,
+      "sample_size": 60,
+      "method": "monetary unit sampling (example only)"
+    },
+    "citations": [
+      {"source": "sales_register_fy26.xlsx", "rows": "2-1285"}
+    ],
+    "sampling": {
+      "formula": "interval = population_value / sample_size",
+      "seed": 20261031
+    }
+  }
+}

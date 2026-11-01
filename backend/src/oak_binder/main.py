@@ -14,6 +14,7 @@ from oak_binder.config import Settings, get_settings
 from oak_binder.db import make_engine, make_session_factory
 from oak_binder.errors import install_error_handlers
 from oak_binder.services.attachments import build_store
+from oak_binder.services.spine_client import build_spine_client
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -25,6 +26,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # The attachment store OAK_STORE selects: the local write-once directory today; a vault
     # adapter once the vault is confirmed (D7, D17, D23).
     app.state.attachment_store = build_store(resolved)
+    # The Financial Spine, read-only, when OAK_SPINE_URL names one (D29).
+    app.state.spine_client = build_spine_client(resolved)
     install_error_handlers(app)
     app.include_router(router)
 

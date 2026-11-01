@@ -1,0 +1,37 @@
+{
+  "paper": {
+    "ref": "C-1",
+    "section": "C",
+    "title": "Materiality memo",
+    "sa_refs": ["SA 320"],
+    "objective": "Set overall materiality, performance materiality and the clearly trivial threshold for the FY2025-26 audit.",
+    "procedure": "Benchmark chosen from the Financial Spine's locked version; band applied per the firm's methodology; figures read from the Spine, not retyped.",
+    "population_sample": null,
+    "result": "Benchmark revenue from operations 9,800,000.00 (PL.R.1). Overall materiality 490,000.00; performance materiality 250,000.00; clearly trivial 24,500.00.",
+    "conclusion": "Materiality set as above; to be revisited if the benchmark moves by more than 10% before the report is dated."
+  },
+  "generated": {
+    "source": "materiality",
+    "module": "oak_materiality",
+    "module_version": "example",
+    "run_id": "materiality-run-example-001",
+    "generated_at": "2026-10-31T09:30:00+05:30",
+    "inputs": {
+      "spine_version_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "benchmark_head_id": "PL.R.1",
+      "method": "example only: the module's own inputs go here, as it recorded them"
+    },
+    "citations": [
+      {"source": "Financial Spine", "version_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "head_id": "PL.R.1"},
+      {"source": "Financial Spine", "version_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "head_id": "BS.A.1"}
+    ],
+    "materiality": {
+      "benchmark": {"head_id": "PL.R.1", "label": "Revenue from operations", "amount": "9800000.00"},
+      "band": {"overall": "490000.00", "performance": "250000.00", "clearly_trivial": "24500.00"},
+      "spine_figures": {
+        "version_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "figures": {"PL.R.1": "9800000.00", "BS.A.1": "1250000.00", "BS.L.1": "480000.00"}
+      }
+    }
+  }
+}

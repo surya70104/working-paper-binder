@@ -24,6 +24,77 @@ export type PaperSummary = {
   title: string;
   status: Status;
   current_version: number | null;
+  // Spec 3C (D31): the module source that generated the paper; null for a hand-made one.
+  generated_by: string | null;
+};
+
+// Spec 3C (D31): where a generated paper came from. `payload` is the provenance block exactly
+// as the module delivered it: inputs, citations and the source block.
+export type Generation = {
+  id: string;
+  source: string;
+  module: string;
+  module_version: string | null;
+  run_id: string | null;
+  generated_at: string;
+  received_by: string;
+  received_at: string;
+  content_hash_at_intake: string;
+  spine_figures_check: "verified" | "not_checked" | null;
+  locked_fields: string[];
+  payload: Record<string, unknown>;
+  // Stage E (D32): for a paper the Financial Spine produced, whether it still matches the
+  // binder's linked version; null for every other source.
+  freshness: Freshness | null;
+};
+
+export type FreshnessState = "current" | "stale" | "not_checked";
+export type Freshness = {
+  state: FreshnessState;
+  detail: string | null;
+  recorded_version_id: string | null;
+  recorded_version_label: string | null;
+};
+
+// Stage E: the Spine papers of a binder, per area and the adjustment chain (screen 1).
+export type SpinePaperState = "none" | FreshnessState;
+export type SpineAreaStatus = {
+  code: string;
+  name: string;
+  mapped: boolean;
+  listed_heads: string[];
+  paper_id: string | null;
+  ref: string;
+  state: SpinePaperState;
+  detail: string | null;
+  recorded_version_id: string | null;
+  recorded_version_label: string | null;
+};
+export type SpineChainStatus = {
+  ref: string;
+  section: string;
+  paper_id: string | null;
+  state: SpinePaperState;
+  can_generate: boolean;
+  reason: string | null;
+  detail: string | null;
+  recorded_version_id: string | null;
+  recorded_version_label: string | null;
+};
+export type SpinePapersStatus = {
+  can_generate: boolean;
+  reason: string | null;
+  version_id: string | null;
+  version_label: string | null;
+  version_hash: string | null;
+  areas: SpineAreaStatus[];
+  chain: SpineChainStatus;
+  map_problems: string[];
+  unassigned_heads: string[];
+};
+export type ReferenceChanges = { added: string[]; removed: string[]; kept: string[]; for_review: string[] };
+export type RegeneratedPaper = Paper & {
+  regeneration: { references: ReferenceChanges; previous_run_id: string | null; run_id: string | null };
 };
 
 export type Version = {
@@ -67,6 +138,7 @@ export type Xref = {
   to_wp: string | null;
   to_ref: string | null;
   to_fs_line: string | null;
+  to_fs_line_label: string | null;
   to_vault_doc: string | null;
   to_filename: string | null;
   to_attachment_id: string | null;
@@ -79,6 +151,62 @@ export type Xref = {
   checked: boolean;
   // Information only: the target paper's content changed since the reference was made.
   target_amended: string | null;
+};
+
+export type FsLine = {
+  head_id: string;
+  label: string;
+  side: string | null;
+  depth: number | null;
+  item: string | null;
+  current: string | null;
+  prior: string | null;
+  has_figures: boolean;
+};
+
+export type FsLines = { available: boolean; reason: string | null; version_locked: boolean; lines: FsLine[] };
+
+// Screen 4: FS line → lead schedule → working paper → source document (D30).
+export type MapLink = { xref_id: string; direction: "to" | "from"; broken: string | null; amended: string | null; checked: boolean };
+export type MapDocument = {
+  xref_id: string;
+  doc_id: string;
+  attachment_id: string | null;
+  filename: string | null;
+  filed_on_ref: string | null;
+  broken: string | null;
+};
+export type MapPaper = {
+  id: string;
+  ref: string;
+  title: string;
+  section: string;
+  status: string;
+  role: "lead_schedule" | "working_paper";
+  link: MapLink | null;
+  documents: MapDocument[];
+  papers: MapPaper[];
+};
+export type MapLine = {
+  head_id: string;
+  label: string | null;
+  side: string | null;
+  current: string | null;
+  prior: string | null;
+  known: boolean;
+  papers: MapPaper[];
+};
+export type XrefMap = {
+  available: boolean;
+  reason: string | null;
+  lines: MapLine[];
+  beyond_depth: MapPaper[];
+  unattached: MapPaper[];
+  max_depth: number;
+  broken: number;
+  amended: number;
+  unchecked: number;
+  total_references: number;
 };
 
 export type XrefCreate = {
@@ -102,6 +230,25 @@ export type Paper = PaperSummary & {
   versions: Version[];
   attachments: Attachment[];
   xrefs: Xref[];
+  generated: Generation | null;
+  // Spec 3D (D33): preparer, the binder's review levels in order, sign-off.
+  review_chain: ReviewChain | null;
+};
+
+export type ReviewStep = {
+  level: string;
+  kind: "preparer" | "review" | "sign_off";
+  done: boolean;
+  by: string | null;
+  at: string | null;
+  version: number | null;
+};
+export type ReviewChain = {
+  configured: string[];
+  steps: ReviewStep[];
+  next_level: string | null;
+  pending_levels: string[];
+  frozen: boolean;
 };
 
 export type NoteState = "raised" | "assigned" | "responded" | "cleared";
@@ -135,6 +282,30 @@ export type BinderReviewNote = ReviewNote & { ref: string; title: string; paper_
 
 export type Blocker = { kind: string; ref: string | null; detail: string };
 
+// Spec 4: discussion binder · date · participants[] · matter · outcome, append-only.
+export type Discussion = {
+  id: string;
+  binder_id: string;
+  date: string;
+  participants: string[];
+  matter: string;
+  outcome: string | null;
+  recorded_by: string;
+  recorded_at: string;
+};
+
+// Spec 4: departure binder · requirement · reason · alternative_procedure · approved_by.
+export type Departure = {
+  id: string;
+  binder_id: string;
+  requirement: string;
+  reason: string;
+  alternative_procedure: string;
+  approved_by: string | null;
+  recorded_by: string;
+  recorded_at: string;
+};
+
 export type BinderEvent = {
   id: string;
   kind: "assembled" | "amended" | "purged" | "produced";
@@ -159,7 +330,10 @@ export type AssemblyStatus = {
   matches_recorded_manifest: boolean;
   blockers: Blocker[];
   not_checked: string[];
-  manifest: { papers: { ref: string; title: string; version: number | null; content_hash: string | null; attachments: { filename: string; sha256: string }[] }[] } | null;
+  manifest: {
+    papers: { ref: string; title: string; version: number | null; content_hash: string | null; attachments: { filename: string; sha256: string }[] }[];
+    spine?: { engagement_id: string; version_id: string | null } | null;
+  } | null;
   events: BinderEvent[];
   access: AccessEntry[];
 };
@@ -203,6 +377,35 @@ export type BinderSummary = {
   assembly_hash: string | null;
   state: BinderState;
   created_at: string;
+  spine_engagement_id: string | null;
+  spine_version_id: string | null;
+  // Spec 3D (D33): the review levels after the preparer; null means the Pass 1 chain.
+  review_levels: string[] | null;
+};
+
+// The Financial Spine link (D29): what the binder ties to and what the Spine says now.
+export type SpineVersion = {
+  version_id: string;
+  engagement_id: string;
+  version_no: number | null;
+  label: string;
+  is_locked: boolean;
+  locked_by: string | null;
+  locked_at: string | null;
+  hash: string | null;
+  performance_materiality: string | null;
+  pm_source: string | null;
+  adjustments: Record<string, number> | null;
+};
+
+export type SpineLink = {
+  configured: boolean;
+  engagement_id: string | null;
+  version_id: string | null;
+  reachable: boolean;
+  reason: string | null;
+  engagement: { id: string; entity_id: string | null; financial_year_end: string | null; label: string } | null;
+  version: SpineVersion | null;
 };
 
 export type Binder = BinderSummary & {
@@ -210,6 +413,7 @@ export type Binder = BinderSummary & {
   days_to_assembly: number | null;
   missing_required: number;
   sections: SectionIndex[];
+  review_levels_frozen: boolean;
 };
 
 export type PaperAction = "prepare" | "submit" | "review" | "sign-off";
@@ -263,7 +467,23 @@ export const api = {
   getBinder: (id: string) => request<Binder>("GET", `/api/binders/${id}`),
   setReportDate: (id: string, report_date: string | null) =>
     request<Binder>("PATCH", `/api/binders/${id}`, { report_date }),
-  createPaper: (binderId: string, paper: { ref: string; section: string; title: string }) =>
+  getSpineLink: (id: string) => request<SpineLink>("GET", `/api/binders/${id}/spine`),
+  setSpineLink: (id: string, link: { spine_engagement_id: string | null; spine_version_id: string | null }) =>
+    request<Binder>("PATCH", `/api/binders/${id}`, link),
+  listSpineVersions: (engagementId: string) =>
+    request<SpineVersion[]>("GET", `/api/spine/engagements/${engagementId}/versions`),
+  setReviewLevels: (binderId: string, levels: string[] | null) =>
+    request<Binder>("PATCH", `/api/binders/${binderId}`, { review_levels: levels }),
+  getSpinePapers: (binderId: string) => request<SpinePapersStatus>("GET", `/api/binders/${binderId}/spine-papers`),
+  generateLeadSchedules: (binderId: string, areas: string[] | null) =>
+    request<Paper[]>("POST", `/api/binders/${binderId}/spine-papers/lead-schedules`, { areas }),
+  generateAdjustmentChain: (binderId: string) =>
+    request<Paper>("POST", `/api/binders/${binderId}/spine-papers/adjustment-chain`),
+  regeneratePaper: (paperId: string) => request<RegeneratedPaper>("POST", `/api/papers/${paperId}/regenerate`),
+  createPaper: (
+    binderId: string,
+    paper: { ref: string; section: string; title: string; sa_refs?: string[] },
+  ) =>
     request<Paper>("POST", `/api/binders/${binderId}/papers`, paper),
   getPaper: (id: string) => request<Paper>("GET", `/api/papers/${id}`),
   updatePaper: (id: string, changes: Partial<PaperContent> & { amendment_reason?: string }) =>
@@ -285,6 +505,24 @@ export const api = {
   removeAttachment: (id: string) => request<null>("DELETE", `/api/attachments/${id}`),
   addXref: (paperId: string, body: XrefCreate) => request<Paper>("POST", `/api/papers/${paperId}/xrefs`, body),
   removeXref: (id: string) => request<null>("DELETE", `/api/xrefs/${id}`),
+  getFsLines: (binderId: string) => request<FsLines>("GET", `/api/binders/${binderId}/fs-lines`),
+  getXrefMap: (binderId: string) => request<XrefMap>("GET", `/api/binders/${binderId}/xref-map`),
+  listDiscussions: (binderId: string) => request<Discussion[]>("GET", `/api/binders/${binderId}/discussions`),
+  recordDiscussion: (
+    binderId: string,
+    body: { date: string; participants: string[]; matter: string; outcome: string | null; amendment_reason?: string },
+  ) => request<Discussion>("POST", `/api/binders/${binderId}/discussions`, body),
+  listDepartures: (binderId: string) => request<Departure[]>("GET", `/api/binders/${binderId}/departures`),
+  recordDeparture: (
+    binderId: string,
+    body: {
+      requirement: string;
+      reason: string;
+      alternative_procedure: string;
+      approved_by: string | null;
+      amendment_reason?: string;
+    },
+  ) => request<Departure>("POST", `/api/binders/${binderId}/departures`, body),
   attachmentUrl: (id: string) => `/api/attachments/${id}/content`,
   getAssembly: (binderId: string) => request<AssemblyStatus>("GET", `/api/binders/${binderId}/assembly`),
   assemble: (binderId: string) => request<AssemblyStatus>("POST", `/api/binders/${binderId}/assemble`),
@@ -316,6 +554,10 @@ export const BLOCKER_LABEL: Record<string, string> = {
   unsigned_paper: "Paper not signed off",
   open_review_notes: "Open review notes",
   broken_reference: "Broken cross-reference",
+  spine_version_unlocked: "Spine version not locked",
+  spine_unreachable: "Financial Spine unreachable",
+  spine_version_missing: "Spine version missing",
+  spine_version_not_verified: "Spine version not verified",
 };
 
 export const STATUS_LABEL: Record<Status, string> = {

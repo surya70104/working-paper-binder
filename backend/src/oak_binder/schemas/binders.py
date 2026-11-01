@@ -21,11 +21,17 @@ class BinderCreate(BaseModel):
 
 
 class BinderPatch(BaseModel):
-    """Setting ``report_date`` sets both clocks; ``null`` clears all three."""
+    """Setting ``report_date`` sets both clocks; ``null`` clears all three. The Spine ids
+    set, change or clear the link (D29): only the fields sent change."""
 
     model_config = ConfigDict(extra="forbid")
 
     report_date: date | None = None
+    spine_engagement_id: uuid.UUID | None = None
+    spine_version_id: uuid.UUID | None = None
+    # Stage F (D33): the review levels after the preparer, in order; null or [] means the
+    # Pass 1 chain. Changeable while open and before any level review is recorded.
+    review_levels: list[str] | None = None
 
 
 class BinderSummary(BaseModel):
@@ -41,6 +47,9 @@ class BinderSummary(BaseModel):
     assembly_hash: str | None
     state: str
     created_at: datetime
+    spine_engagement_id: uuid.UUID | None = None
+    spine_version_id: uuid.UUID | None = None
+    review_levels: list[str] | None = None
 
 
 class SectionIndexOut(BaseModel):
@@ -55,9 +64,13 @@ class BinderOut(BinderSummary):
     days_to_assembly: int | None
     missing_required: int
     sections: list[SectionIndexOut]
+    # Stage F (D33): true once a level review exists for a paper of this binder.
+    review_levels_frozen: bool = False
 
     @classmethod
-    def build(cls, binder: Binder, index: BinderIndex, today: date) -> BinderOut:
+    def build(
+        cls, binder: Binder, index: BinderIndex, today: date, review_levels_frozen: bool = False
+    ) -> BinderOut:
         base = BinderSummary.model_validate(binder).model_dump()
         return cls(
             **base,
@@ -66,11 +79,17 @@ class BinderOut(BinderSummary):
                 days_to_assembly(binder.assembly_due, today) if binder.assembly_due else None
             ),
             missing_required=index.missing_required,
+            review_levels_frozen=review_levels_frozen,
             sections=[
                 SectionIndexOut(
                     code=s.code,
                     name=s.name,
-                    papers=[PaperSummary.model_validate(p) for p in s.papers],
+                    papers=[
+                        PaperSummary.model_validate(p).model_copy(
+                            update={"generated_by": index.generated_by.get(p.id)}
+                        )
+                        for p in s.papers
+                    ],
                     missing=[
                         RequiredPaperOut(
                             ref=r.ref, section=r.section, title=r.title, sa_refs=list(r.sa_refs)

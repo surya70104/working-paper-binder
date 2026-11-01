@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api, NEXT_ACTION, STATUS_LABEL, type Paper, type PaperContent, type ReviewNote } from "../api";
 import { CrossReferences } from "../components/CrossReferences";
+import { GeneratedPanel } from "../components/GeneratedPanel";
 import { ReviewNotes } from "../components/ReviewNotes";
 import { Markdown } from "../markdown";
 import { href } from "../router";
@@ -108,19 +109,33 @@ export function PaperPage({ id }: { id: string }) {
   const purged = paper.binder_state === "purged";
   // After assembly every change is an amendment and needs a reason (spec 3F).
   const needsReason = assembled && reason.trim().length === 0;
-  const next = purged ? null : NEXT_ACTION[paper.status];
+  const nextAction = purged ? null : NEXT_ACTION[paper.status];
+  const chain = paper.review_chain;
+  // Spec 3D (D33): with review levels configured, "Review" records the next level in order.
+  const next =
+    nextAction && nextAction.action === "review" && chain && chain.configured.length > 0 && chain.next_level
+      ? { ...nextAction, label: `Review as ${chain.next_level}` }
+      : nextAction;
   const hasConclusion = form.conclusion.trim().length > 0;
   const openNotes = paper.open_review_notes;
   const signOffBlocked = next?.action === "sign-off" && (!hasConclusion || openNotes > 0);
   const reading = mode === "read";
+  // Spec 3C (D31): a generated paper's module fields are not retyped here; only the
+  // conclusion is a person's to write. The backend refuses a change to a locked field too.
+  const locked = new Set(paper.generated?.locked_fields ?? []);
+  const lockedNote = paper.generated
+    ? `from ${paper.generated.module}; a correction comes from the module`
+    : null;
   const field = (key: keyof Form, label: string, rows: number) => (
     <label className="grid gap-1 text-sm">
       {label}
+      {locked.has(key) && <span className="text-xs text-slate-500">locked: {lockedNote}</span>}
       <textarea
         rows={rows}
         value={form[key]}
+        disabled={locked.has(key)}
         onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-        className="rounded border border-slate-300 px-2 py-1 font-sans"
+        className="rounded border border-slate-300 px-2 py-1 font-sans disabled:bg-slate-50 disabled:text-slate-600"
       />
     </label>
   );
@@ -164,6 +179,16 @@ export function PaperPage({ id }: { id: string }) {
         )}
       </section>
 
+      {paper.generated && (
+        <GeneratedPanel
+          generation={paper.generated}
+          status={paper.status}
+          paperId={id}
+          binderState={paper.binder_state}
+          onChanged={load}
+        />
+      )}
+
       <section className="rounded border border-slate-200 bg-white p-4">
         <h2 className="text-lg font-semibold">Sign-off</h2>
         <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -193,9 +218,39 @@ export function PaperPage({ id }: { id: string }) {
             </span>
           )}
         </div>
+        {chain && (
+          <ol className="mt-3 grid gap-1 text-sm" data-testid="review-chain">
+            {chain.steps.map((s) => (
+              <li key={s.level} className="flex flex-wrap items-baseline gap-2" data-testid="review-step">
+                <span
+                  className={`rounded px-1.5 py-0.5 text-xs ${s.done ? "bg-green-50 text-green-800" : "bg-slate-100 text-slate-600"}`}
+                  data-testid="review-step-state"
+                >
+                  {s.done ? "done" : "pending"}
+                </span>
+                <span className="font-mono text-xs">{s.level}</span>
+                {s.done ? (
+                  <span className="text-slate-600">
+                    {s.by} <span className="text-slate-500">{s.at}</span>
+                    {s.version !== null && <span className="text-slate-500"> · version {s.version}</span>}
+                  </span>
+                ) : (
+                  s.level === chain.next_level && <span className="text-xs text-amber-900">next</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
         <p className="mt-2 text-xs text-slate-500">
           draft → prepared → in review → reviewed → signed off. Each sign-off writes an
           immutable version; editing returns the paper to draft.
+          {chain && chain.configured.length > 0 && (
+            <>
+              {" "}
+              Review levels: preparer → {chain.configured.join(" → ")} → sign-off; the paper is
+              reviewed once every level has recorded its review.
+            </>
+          )}
         </p>
       </section>
 
@@ -264,21 +319,30 @@ export function PaperPage({ id }: { id: string }) {
               />
             </label>
           )}
+          {paper.generated && (
+            <p className="text-xs text-slate-600" data-testid="locked-note">
+              Generated by {paper.generated.module}: title, section, SA references, objective,
+              procedure, population and sample, and result are locked. Only the conclusion can be
+              written here (spec 3C, 7).
+            </p>
+          )}
           <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr]">
             <label className="grid gap-1 text-sm">
               Title
               <input
                 value={form.title}
+                disabled={locked.has("title")}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className="rounded border border-slate-300 px-2 py-1"
+                className="rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50 disabled:text-slate-600"
               />
             </label>
             <label className="grid gap-1 text-sm">
               Section
               <select
                 value={form.section}
+                disabled={locked.has("section")}
                 onChange={(e) => setForm({ ...form, section: e.target.value })}
-                className="rounded border border-slate-300 px-2 py-1"
+                className="rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50 disabled:text-slate-600"
               >
                 {SECTIONS.map((s) => (
                   <option key={s}>{s}</option>
@@ -289,8 +353,9 @@ export function PaperPage({ id }: { id: string }) {
               SA references (comma separated)
               <input
                 value={form.sa_refs}
+                disabled={locked.has("sa_refs")}
                 onChange={(e) => setForm({ ...form, sa_refs: e.target.value })}
-                className="rounded border border-slate-300 px-2 py-1"
+                className="rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50 disabled:text-slate-600"
               />
             </label>
           </div>

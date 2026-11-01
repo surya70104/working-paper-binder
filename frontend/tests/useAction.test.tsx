@@ -6,7 +6,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { AssemblyPage } from "../src/pages/AssemblyPage";
 import { BinderPage } from "../src/pages/BinderPage";
 import { PaperPage } from "../src/pages/PaperPage";
-import { assemblyFixture, binderFixture, mockApi, paperFixture, version1 } from "./mockApi";
+import { SPINE_UNCONFIGURED, assemblyFixture, binderFixture, mockApi, paperFixture, version1 } from "./mockApi";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -114,6 +114,9 @@ test("a successful action clears an earlier error", async () => {
 test("the binder page reloads after a refused report date and keeps the real value", async () => {
   mockApi({
     "GET /api/binders/b1": binderFixture({ report_date: "2026-09-30" }),
+    "GET /api/binders/b1/discussions": [],
+    "GET /api/binders/b1/departures": [],
+    "GET /api/binders/b1/spine": SPINE_UNCONFIGURED,
     "PATCH /api/binders/b1": {
       httpStatus: 409,
       body: { detail: "binder for 'ENG-2026-001' is assembled" },

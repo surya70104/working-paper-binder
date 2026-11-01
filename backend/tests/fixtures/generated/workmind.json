@@ -1,0 +1,35 @@
+{
+  "paper": {
+    "ref": "D-5",
+    "section": "D",
+    "title": "Receivables: WorkMind run, subsequent receipts",
+    "sa_refs": ["SA 500"],
+    "objective": "Trace year-end receivable balances to receipts after the year end.",
+    "procedure": "For each balance above the threshold, the run matched subsequent bank receipts to invoices and listed the unmatched remainder.",
+    "population_sample": "412 receivable balances; 388 matched to receipts; 24 unmatched, listed by customer.",
+    "result": "Unmatched balances total 1,120,000.00 across 24 customers; the largest is 310,000.00.",
+    "conclusion": null
+  },
+  "generated": {
+    "source": "workmind",
+    "module": "workmind",
+    "module_version": "example",
+    "run_id": "wm-run-example-7f3a",
+    "generated_at": "2026-10-31T12:00:00+05:30",
+    "inputs": {
+      "receivables_ledger": "receivables_fy26.xlsx",
+      "bank_statements": ["bank_hdfc_apr26.pdf", "bank_hdfc_may26.pdf"],
+      "threshold": "50000.00"
+    },
+    "citations": [
+      {"source": "receivables_fy26.xlsx", "row": 42},
+      {"source": "bank_hdfc_apr26.pdf", "row": "page 3, line 17"}
+    ],
+    "workmind": {
+      "source_row_citations": [
+        {"source": "receivables_fy26.xlsx", "row": 42},
+        {"source": "bank_hdfc_apr26.pdf", "row": "page 3, line 17", "detail": "receipt 310,000.00 from Customer A"}
+      ]
+    }
+  }
+}

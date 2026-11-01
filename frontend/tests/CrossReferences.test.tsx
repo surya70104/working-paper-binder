@@ -17,6 +17,7 @@ const outToBank: Xref = {
   to_wp: "p2",
   to_ref: "D-2",
   to_fs_line: null,
+  to_fs_line_label: null,
   to_vault_doc: null,
   to_filename: null,
   to_attachment_id: null,
@@ -167,7 +168,9 @@ test("an FS line is typed, a document comes from this paper's attachments, nothi
   render(<PaperPage id="p1" />);
   await screen.findByRole("heading", { name: /Cross-references/ });
   fireEvent.change(screen.getByLabelText("Target"), { target: { value: "fs_line" } });
-  fireEvent.change(screen.getByLabelText(/FS line/), { target: { value: "  Cash and cash equivalents " } });
+  fireEvent.change(await screen.findByLabelText(/FS line \(as it appears/), {
+    target: { value: "  Cash and cash equivalents " },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Add reference" }));
   await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
   expect(calls.find((c) => c.method === "POST")?.body).toEqual({

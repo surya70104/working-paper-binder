@@ -19,22 +19,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from oak_binder import __version__
-from oak_binder.errors import Conflict, Invalid
+from oak_binder.errors import Conflict, Invalid, NotFound, SpineUnavailable
 from oak_binder.hashing import content_hash
 from oak_binder.models import (
     Binder,
     BinderEvent,
     BinderState,
+    Departure,
+    Discussion,
     EventKind,
     Wp,
     WpAttachment,
     WpStatus,
     WpVersion,
 )
+from oak_binder.services import fs_lines as fs_line_service
 from oak_binder.services import papers as paper_service
 from oak_binder.services import xrefs as xref_service
 from oak_binder.services.attachments import AttachmentStore, _attach_row, verified_read
 from oak_binder.services.binders import build_index
+from oak_binder.services.spine_client import SpineClient, SpineVersion
 
 MANIFEST_VERSION = 1
 
@@ -43,17 +47,33 @@ MANIFEST_VERSION = 1
 # the Spine is not part of this product (D21). What is not checked is reported, never counted
 # as clear.
 NOT_CHECKED: tuple[str, ...] = (
-    "cross-references to FS lines: the Financial Spine is not part of this product (D21), so "
-    "a reference to a Spine line cannot be followed; references to papers and documents are "
-    "checked",
+    "cross-references to FS lines: the binder is not linked to a Financial Spine version "
+    "(D29, D30), so a reference to an FS line cannot be followed; references to papers and "
+    "documents are checked",
 )
 
 
-def not_checked(session: Session, binder: Binder) -> list[str]:
-    """The not-checked list for this binder, with the count of FS-line references it holds."""
-    lines = xref_service.unchecked_fs_lines(session, binder)
-    suffix = f" ({lines} such reference(s) in this file)" if lines else " (none in this file)"
-    return [NOT_CHECKED[0] + suffix]
+def not_checked(session: Session, binder: Binder, spine: SpineClient | None = None) -> list[str]:
+    """What this binder's assembly cannot check. Empty once the binder is linked to a Spine
+    version whose lines can be read: every reference is then checkable (D30). Otherwise the
+    FS-line references, with their count and the reason."""
+    from oak_binder.services import spine_papers  # late: spine_papers imports this module's peers
+
+    # Stage E (D32, decision 8): a Spine paper built from another version than the one the
+    # binder is linked to is information, never a blocker; it is said here, by name.
+    notes = spine_papers.stale_notes(session, spine, binder)
+    lines = fs_line_service.for_binder(spine, binder)
+    if lines.available:
+        return notes
+    count = xref_service.unchecked_fs_lines(session, binder)
+    suffix = f" ({count} such reference(s) in this file)" if count else " (none in this file)"
+    if binder.spine_version_id is None:
+        return [NOT_CHECKED[0] + suffix, *notes]
+    return [
+        f"cross-references to FS lines: {lines.reason}; references to papers and documents "
+        f"are checked{suffix}",
+        *notes,
+    ]
 
 
 @dataclass(frozen=True)
@@ -67,9 +87,48 @@ class Blocker:
         return f"{self.kind}{where}: {self.detail}"
 
 
-def blockers(session: Session, binder: Binder) -> list[Blocker]:
+def spine_blocker(
+    spine: SpineClient | None, binder: Binder
+) -> tuple[Blocker | None, SpineVersion | None]:
+    """A linked Spine version must be locked before the file is assembled (D29): an unlocked
+    version's figures and lines can still change under the file. A Spine that cannot be
+    read is a named blocker too, never silently clear. A binder with no version linked has
+    nothing to check."""
+    if binder.spine_version_id is None:
+        return None, None
+    if spine is None:
+        return (
+            Blocker(
+                "spine_version_not_verified",
+                None,
+                "the binder is linked to a Spine version but no Financial Spine is configured "
+                "(OAK_SPINE_URL), so its lock cannot be confirmed",
+            ),
+            None,
+        )
+    try:
+        version = spine.version(binder.spine_version_id)
+    except NotFound as exc:
+        return Blocker("spine_version_missing", None, str(exc)), None
+    except SpineUnavailable as exc:
+        return Blocker("spine_unreachable", None, str(exc)), None
+    if not version.is_locked:
+        return (
+            Blocker(
+                "spine_version_unlocked",
+                None,
+                f"Spine version {version.version_no or ''} {version.label!r} is not locked; "
+                "lock it in the Spine, or link a locked version",
+            ),
+            version,
+        )
+    return None, version
+
+
+def blockers(session: Session, binder: Binder, spine: SpineClient | None = None) -> list[Blocker]:
     """Spec 3F and 8.3: unsigned papers, open notes, broken references, missing required
-    papers, each named. Plus the report date, without which there is no deadline."""
+    papers, each named. Plus the report date, without which there is no deadline, and a
+    linked Spine version that is not locked (D29)."""
     found: list[Blocker] = []
     if binder.report_date is None:
         found.append(Blocker("report_not_dated", None, "the report date starts the 60-day clock"))
@@ -85,8 +144,11 @@ def blockers(session: Session, binder: Binder) -> list[Blocker]:
                 found.append(
                     Blocker("open_review_notes", paper.ref, f"{notes} open review note(s)")
                 )
-    for item in xref_service.broken(session, binder):
+    for item in xref_service.broken(session, binder, fs_line_service.for_binder(spine, binder)):
         found.append(Blocker("broken_reference", item.from_ref, item.detail))
+    spine_block, _ = spine_blocker(spine, binder)
+    if spine_block is not None:
+        found.append(spine_block)
     return found
 
 
@@ -123,7 +185,7 @@ def build_manifest(session: Session, binder: Binder) -> dict[str, Any]:
                 ],
             }
         )
-    return {
+    manifest: dict[str, Any] = {
         "manifest_version": MANIFEST_VERSION,
         "generator": f"oak-binder {__version__}",
         "binder": {
@@ -138,6 +200,56 @@ def build_manifest(session: Session, binder: Binder) -> dict[str, Any]:
         },
         "papers": entries,
     }
+    # The Spine link (spec 3A; D29), only when one exists, so files assembled without a
+    # link keep the manifest and hash they recorded. The ids are the Binder's own record;
+    # the version's hash at assembly is in the assembled event, read from the Spine then.
+    if binder.spine_engagement_id is not None:
+        manifest["spine"] = {
+            "engagement_id": str(binder.spine_engagement_id),
+            "version_id": (
+                str(binder.spine_version_id) if binder.spine_version_id is not None else None
+            ),
+        }
+    # The discussions and departures logs (spec 3H) are part of the frozen file. They are
+    # listed only when any exist, so a file assembled before the logs existed keeps the
+    # manifest and hash it recorded (D28).
+    discussions = session.scalars(
+        select(Discussion)
+        .where(Discussion.binder_id == binder.id)
+        .order_by(Discussion.date, Discussion.recorded_at, Discussion.id)
+    ).all()
+    if discussions:
+        manifest["discussions"] = [
+            {
+                "id": str(d.id),
+                "date": d.date.isoformat(),
+                "participants": list(d.participants),
+                "matter": d.matter,
+                "outcome": d.outcome,
+                "recorded_by": d.recorded_by,
+                "recorded_at": d.recorded_at.isoformat(),
+            }
+            for d in discussions
+        ]
+    departures = session.scalars(
+        select(Departure)
+        .where(Departure.binder_id == binder.id)
+        .order_by(Departure.recorded_at, Departure.id)
+    ).all()
+    if departures:
+        manifest["departures"] = [
+            {
+                "id": str(d.id),
+                "requirement": d.requirement,
+                "reason": d.reason,
+                "alternative_procedure": d.alternative_procedure,
+                "approved_by": d.approved_by,
+                "recorded_by": d.recorded_by,
+                "recorded_at": d.recorded_at.isoformat(),
+            }
+            for d in departures
+        ]
+    return manifest
 
 
 def file_hash(manifest: Mapping[str, Any]) -> str:
@@ -187,13 +299,20 @@ def latest_manifest(session: Session, binder: Binder) -> dict[str, Any] | None:
     return None
 
 
-def assemble(session: Session, binder: Binder, user: str, now: datetime) -> BinderEvent:
+def assemble(
+    session: Session,
+    binder: Binder,
+    user: str,
+    now: datetime,
+    spine: SpineClient | None = None,
+) -> BinderEvent:
     """Freeze the file: refuse while anything blocks, else record the manifest and hash.
     On an already assembled binder this re-assembles after amendments; the previous hash is
-    kept in the event so the chain of manifests is visible (spec 3F)."""
+    kept in the event so the chain of manifests is visible (spec 3F). A linked Spine
+    version's lock hash is recorded in the event too (D29)."""
     if binder.state == BinderState.PURGED:
         raise Conflict(f"binder for {binder.engagement!r} has been purged")
-    found = blockers(session, binder)
+    found = blockers(session, binder, spine)
     if found:
         listed = "; ".join(str(b) for b in found)
         raise Conflict(f"assembly is blocked by {len(found)} item(s): {listed}")
@@ -206,24 +325,49 @@ def assemble(session: Session, binder: Binder, user: str, now: datetime) -> Bind
     binder.assembled_at = now
     binder.assembly_hash = digest
     session.flush()
-    return record(
-        session,
-        binder,
-        EventKind.ASSEMBLED,
-        user,
-        now,
-        details={"file_hash": digest, "previous_file_hash": previous, "manifest": manifest},
-    )
+    details: dict[str, Any] = {
+        "file_hash": digest,
+        "previous_file_hash": previous,
+        "manifest": manifest,
+    }
+    _, version = spine_blocker(spine, binder)
+    if version is not None:
+        details["spine_version"] = {
+            "version_id": str(version.version_id),
+            "label": version.label,
+            "hash": version.hash,
+            "locked_at": version.locked_at.isoformat() if version.locked_at else None,
+        }
+        # The lines every FS-line reference was just verified against travel with the
+        # event, so the produced file never needs the Spine again (D30).
+        lines = fs_line_service.for_binder(spine, binder)
+        if lines.available:
+            details["fs_lines"] = fs_line_service.to_record(lines, version.version_id)
+    return record(session, binder, EventKind.ASSEMBLED, user, now, details=details)
+
+
+def assembled_lines(session: Session, binder: Binder) -> fs_line_service.FsLines | None:
+    """The FS lines recorded by the most recent assembly (D30), or None when that assembly
+    recorded none: a binder assembled before lines were recorded, or one assembled without
+    a readable Spine version."""
+    for event in reversed(events(session, binder)):
+        if event.kind == EventKind.ASSEMBLED:
+            return fs_line_service.from_record(event.details.get("fs_lines"))
+    return None
 
 
 # --- post-assembly amendments (spec 3F, 8.4) --------------------------------------------------
 
 
-def _require_reason(reason: str | None) -> str:
+def require_reason(reason: str | None) -> str:
+    """The amendment reason every post-assembly change needs (spec 3F), trimmed."""
     text = (reason or "").strip()
     if not text:
         raise Invalid("a post-assembly change needs an amendment reason (spec 3F)")
     return text
+
+
+_require_reason = require_reason
 
 
 def _amendment_version(
@@ -262,6 +406,7 @@ def amend(
     text = _require_reason(reason)
     if "ref" in changes:
         raise Invalid("the reference is stable and cannot be changed (spec 3B)")
+    paper_service.refuse_locked(session, paper, changes)
     cleaned = paper_service.validate_content(changes)
     if not paper_service.apply_changes(paper, cleaned):
         raise Invalid("the amendment changes nothing")

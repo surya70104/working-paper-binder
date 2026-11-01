@@ -56,6 +56,7 @@ export function paperFixture(overrides: Partial<Paper> = {}): Paper {
     title: "Cash and bank",
     status: "draft",
     current_version: null,
+    generated_by: null,
     sa_refs: ["SA 500"],
     objective: "Existence of cash",
     procedure: "Bank confirmations",
@@ -68,6 +69,8 @@ export function paperFixture(overrides: Partial<Paper> = {}): Paper {
     versions: [],
     attachments: [],
     xrefs: [],
+    generated: null,
+    review_chain: null,
     ...overrides,
   };
 }
@@ -116,6 +119,39 @@ export function assemblyFixture(overrides: Partial<AssemblyStatus> = {}): Assemb
   };
 }
 
+// Stage E: no Spine papers and nothing to generate, as an unlinked binder answers.
+export const SPINE_PAPERS_NONE = {
+  can_generate: false,
+  reason: "the binder is not linked to a Financial Spine version (D29)",
+  version_id: null,
+  version_label: null,
+  version_hash: null,
+  areas: [],
+  chain: {
+    ref: "W-ADJ",
+    section: "W",
+    paper_id: null,
+    state: "none",
+    can_generate: false,
+    reason: "the binder is not linked to a Financial Spine version (D29)",
+    detail: null,
+    recorded_version_id: null,
+    recorded_version_label: null,
+  },
+  map_problems: [],
+  unassigned_heads: [],
+};
+
+export const SPINE_UNCONFIGURED = {
+  configured: false,
+  engagement_id: null,
+  version_id: null,
+  reachable: false,
+  reason: null,
+  engagement: null,
+  version: null,
+};
+
 export function binderFixture(overrides: Partial<Binder> = {}): Binder {
   return {
     id: "b1",
@@ -129,6 +165,10 @@ export function binderFixture(overrides: Partial<Binder> = {}): Binder {
     assembly_hash: null,
     state: "open",
     created_at: "2026-10-28T09:00:00Z",
+    spine_engagement_id: null,
+    spine_version_id: null,
+    review_levels: null,
+    review_levels_frozen: false,
     days_to_assembly: 32,
     missing_required: 5,
     sections: [
@@ -137,13 +177,13 @@ export function binderFixture(overrides: Partial<Binder> = {}): Binder {
       {
         code: "C",
         name: "Materiality",
-        papers: [{ id: "p-c1", ref: "C-1", section: "C", title: "Materiality memo", status: "signed_off", current_version: 2 }],
+        papers: [{ id: "p-c1", ref: "C-1", section: "C", title: "Materiality memo", status: "signed_off", current_version: 2, generated_by: null }],
         missing: [],
       },
       {
         code: "D",
         name: "Financial statement area D",
-        papers: [{ id: "p1", ref: "D-1", section: "D", title: "Cash and bank", status: "in_review", current_version: 1 }],
+        papers: [{ id: "p1", ref: "D-1", section: "D", title: "Cash and bank", status: "in_review", current_version: 1, generated_by: null }],
         missing: [],
       },
     ],

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from oak_binder.clocks import assembly_due, retention_until
 from oak_binder.errors import Conflict, Invalid, NotFound
-from oak_binder.models import Binder, BinderState, Wp
+from oak_binder.models import Binder, BinderState, Wp, WpGeneration
 from oak_binder.services.templates import IndexTemplate, RequiredPaper, load_template
 
 
@@ -94,6 +94,8 @@ class SectionIndex:
 class BinderIndex:
     template: IndexTemplate
     sections: list[SectionIndex]
+    # Paper id -> the source that generated it (spec 3C; D31); hand-made papers are absent.
+    generated_by: dict[uuid.UUID, str] = field(default_factory=dict)
 
     @property
     def missing_required(self) -> int:
@@ -120,4 +122,12 @@ def build_index(session: Session, binder: Binder) -> BinderIndex:
     for required in template.required:
         if (required.ref, required.section) not in present:
             by_section[required.section].missing.append(required)
-    return BinderIndex(template, list(by_section.values()))
+    generated = dict(
+        session.execute(
+            select(WpGeneration.wp_id, WpGeneration.source)
+            .join(Wp, Wp.id == WpGeneration.wp_id)
+            .where(Wp.binder_id == binder.id)
+            .order_by(WpGeneration.received_at, WpGeneration.id)
+        ).all()
+    )
+    return BinderIndex(template, list(by_section.values()), generated)

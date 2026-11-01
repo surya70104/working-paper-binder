@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from oak_binder.models import Binder, Wp, Xref
 from oak_binder.services import xrefs
+from oak_binder.services.fs_lines import FsLines
 
 
 class XrefCreate(BaseModel):
@@ -24,6 +25,8 @@ class XrefOut(BaseModel):
     to_wp: uuid.UUID | None
     to_ref: str | None
     to_fs_line: str | None
+    # The line's label in the linked Spine version, when the line is known (D30).
+    to_fs_line_label: str | None
     to_vault_doc: str | None
     to_filename: str | None
     # The attachment the document is filed as, so the reference is clickable (spec 3E).
@@ -43,7 +46,14 @@ class XrefOut(BaseModel):
     target_amended: str | None
 
     @classmethod
-    def build(cls, session: Session, binder: Binder, paper: Wp, xref: Xref) -> XrefOut:
+    def build(
+        cls,
+        session: Session,
+        binder: Binder,
+        paper: Wp,
+        xref: Xref,
+        lines: FsLines | None = None,
+    ) -> XrefOut:
         source = session.get(Wp, xref.from_wp)
         target = session.get(Wp, xref.to_wp) if xref.to_wp is not None else None
         filed = (
@@ -59,6 +69,11 @@ class XrefOut(BaseModel):
             to_wp=xref.to_wp,
             to_ref=target.ref if target else None,
             to_fs_line=xref.to_fs_line,
+            to_fs_line_label=(
+                lines.label(xref.to_fs_line)
+                if lines is not None and xref.to_fs_line is not None
+                else None
+            ),
             to_vault_doc=xref.to_vault_doc,
             to_filename=filed.filename if filed is not None else None,
             to_attachment_id=filed.id if filed is not None else None,
@@ -67,7 +82,7 @@ class XrefOut(BaseModel):
             outgoing=xrefs.is_outgoing(xref, paper),
             created_by=xref.created_by,
             created_at=xref.created_at,
-            broken=xrefs.check(session, binder, xref),
-            checked=xref.to_fs_line is None,
+            broken=xrefs.check(session, binder, xref, lines),
+            checked=xref.to_fs_line is None or bool(lines is not None and lines.available),
             target_amended=xrefs.target_amended(session, xref),
         )

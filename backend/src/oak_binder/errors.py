@@ -27,12 +27,32 @@ class Invalid(BinderError):
     status_code = 422
 
 
+class Forbidden(BinderError):
+    """The caller is authenticated but not allowed this action (an identity that is not an
+    authorised intake identity, D31)."""
+
+    status_code = 403
+
+
 class TooLarge(BinderError):
     status_code = 413
 
 
+class NotAvailable(BinderError):
+    """The request is well formed but the feature it needs does not exist yet (WorkMind
+    intake before the module exists, D31)."""
+
+    status_code = 501
+
+
 class UnsupportedType(BinderError):
     status_code = 415
+
+
+class SpineUnavailable(BinderError):
+    """The Financial Spine cannot be reached or refused the call (D29)."""
+
+    status_code = 503
 
 
 class StoreUnavailable(BinderError):

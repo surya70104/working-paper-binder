@@ -3,6 +3,7 @@ import { BinderPage } from "./pages/BinderPage";
 import { BindersPage } from "./pages/BindersPage";
 import { PaperPage } from "./pages/PaperPage";
 import { ReviewNotesPage } from "./pages/ReviewNotesPage";
+import { XrefMapPage } from "./pages/XrefMapPage";
 import { useRoute } from "./router";
 
 export function App() {
@@ -22,6 +23,7 @@ export function App() {
         {route.name === "binder" && <BinderPage id={route.id} />}
         {route.name === "assembly" && <AssemblyPage id={route.id} />}
         {route.name === "review-notes" && <ReviewNotesPage id={route.id} />}
+        {route.name === "xref-map" && <XrefMapPage id={route.id} />}
         {route.name === "paper" && <PaperPage id={route.id} />}
       </main>
     </div>

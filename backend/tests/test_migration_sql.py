@@ -130,9 +130,53 @@ def test_access_log_is_append_only_at_the_database() -> None:
             assert "UPDATE" not in line and "DELETE" not in line
 
 
+def test_wp_generation_is_append_only_at_the_database() -> None:
+    sql = rendered("upgrade")
+    assert (
+        "CREATE TRIGGER trg_wp_generation_append_only BEFORE UPDATE OR DELETE ON wp_generation "
+        "FOR EACH ROW EXECUTE FUNCTION oak_binder_append_only()"
+    ) in sql
+    assert "CREATE TRIGGER trg_wp_generation_no_truncate BEFORE TRUNCATE ON wp_generation" in sql
+    assert "GRANT SELECT, INSERT ON wp_generation TO oak_binder_app" in sql
+    for line in sql.splitlines():
+        if "GRANT" in line and "wp_generation" in line:
+            assert "UPDATE" not in line and "DELETE" not in line
+    # One paper per run within a source (spec 3C), only when a run id is given.
+    assert (
+        "CREATE UNIQUE INDEX uq_wp_generation_source_run ON wp_generation (source, run_id) "
+        "WHERE run_id IS NOT NULL"
+    ) in sql
+
+
+def test_wp_review_is_append_only_and_review_levels_freeze_at_the_database() -> None:
+    sql = rendered("upgrade")
+    assert (
+        "CREATE TRIGGER trg_wp_review_append_only BEFORE UPDATE OR DELETE ON wp_review "
+        "FOR EACH ROW EXECUTE FUNCTION oak_binder_append_only()"
+    ) in sql
+    assert "CREATE TRIGGER trg_wp_review_no_truncate BEFORE TRUNCATE ON wp_review" in sql
+    assert "GRANT SELECT, INSERT ON wp_review TO oak_binder_app" in sql
+    for line in sql.splitlines():
+        if "GRANT" in line and "wp_review" in line:
+            assert "UPDATE" not in line and "DELETE" not in line
+    assert "CREATE FUNCTION oak_binder_review_levels_frozen() RETURNS trigger" in sql
+    assert (
+        "CREATE TRIGGER trg_binder_review_levels_frozen BEFORE UPDATE OF review_levels ON binder "
+        "FOR EACH ROW EXECUTE FUNCTION oak_binder_review_levels_frozen()"
+    ) in sql
+    assert "ALTER TABLE binder ADD COLUMN review_levels TEXT[]" in sql
+    down = rendered("downgrade")
+    assert "DROP FUNCTION IF EXISTS oak_binder_review_levels_frozen()" in down
+    assert "DROP TRIGGER IF EXISTS trg_binder_review_levels_frozen ON binder" in down
+
+
 def test_downgrade_removes_everything_it_created() -> None:
     sql = rendered("downgrade")
     for table in (
+        "wp_review",
+        "wp_generation",
+        "departure",
+        "discussion",
         "xref",
         "access_log",
         "review_note",

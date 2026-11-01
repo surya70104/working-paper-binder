@@ -7,6 +7,11 @@ Archive layout:
   audit_trail.json                  every binder event (assembled, amended, produced, purged),
                                     every review-note step and every access, in time order
   access_log.json                   who opened the file after assembly (spec 3H)
+  discussions.json                  the discussions log (spec 3H)
+  departures.json                   the departures log (spec 3H)
+  cross_reference_map.json          screen 4's map: FS line -> lead schedule -> working paper ->
+                                    source document, with broken and amended links, built from
+                                    the references and the FS lines the assembly recorded
   papers/<folder>/paper.json        the paper's current fields and status
   papers/<folder>/versions/<n>.json every version: body, preparer, reviewer, signer, hash
   papers/<folder>/review_notes.json the paper's review notes with every step
@@ -38,12 +43,24 @@ from sqlalchemy.orm import Session
 from oak_binder.errors import Conflict
 from oak_binder.hashing import sha256_of_bytes
 from oak_binder.models import Binder, BinderState, EventKind, Wp, WpAttachment
+from oak_binder.schemas.xref_map import XrefMapOut
 from oak_binder.services import access as access_service
+from oak_binder.services import fs_lines as fs_line_service
 from oak_binder.services import papers as paper_service
-from oak_binder.services import review_notes
+from oak_binder.services import records as record_service
+from oak_binder.services import review_levels, review_notes, xref_map
 from oak_binder.services import xrefs as xref_service
-from oak_binder.services.assembly import build_manifest, events, file_hash, latest_manifest, record
+from oak_binder.services.assembly import (
+    assembled_lines,
+    build_manifest,
+    events,
+    file_hash,
+    latest_manifest,
+    record,
+)
 from oak_binder.services.attachments import AttachmentStore, verified_read
+from oak_binder.services.fs_lines import FsLines
+from oak_binder.services.spine_client import SpineClient
 
 CHECKSUMS = "CHECKSUMS.sha256"
 
@@ -135,7 +152,9 @@ def _notes_for_archive(session: Session, paper: Wp) -> list[dict[str, Any]]:
     ]
 
 
-def _xrefs_for_archive(session: Session, binder: Binder, paper: Wp) -> list[dict[str, Any]]:
+def _xrefs_for_archive(
+    session: Session, binder: Binder, paper: Wp, lines: FsLines
+) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for x in xref_service.for_paper(session, paper):
         source = session.get(Wp, x.from_wp)
@@ -151,22 +170,84 @@ def _xrefs_for_archive(session: Session, binder: Binder, paper: Wp) -> list[dict
                 "from_ref": source.ref if source else None,
                 "to_ref": target.ref if target else None,
                 "to_fs_line": x.to_fs_line,
+                "to_fs_line_label": (
+                    lines.label(x.to_fs_line) if x.to_fs_line is not None else None
+                ),
                 "to_vault_doc": x.to_vault_doc,
                 "to_filename": filed.filename if filed is not None else None,
                 "direction": x.direction,
                 "outgoing": xref_service.is_outgoing(x, paper),
                 "created_by": x.created_by,
                 "created_at": x.created_at,
-                "broken": xref_service.check(session, binder, x),
-                "checked": x.to_fs_line is None,
+                "broken": xref_service.check(session, binder, x, lines),
+                "checked": x.to_fs_line is None or lines.available,
                 "target_amended": xref_service.target_amended(session, x),
             }
         )
     return entries
 
 
+def _reviews_for_archive(session: Session, binder: Binder, paper: Wp) -> dict[str, Any]:
+    """The paper's whole review chain (spec 3D, 8.9; Stage F, D33): the binder's configured
+    levels, and one cycle per prepared or amended version with its preparer, each level review
+    (reviewer, time, level, version), the reviewed version and the signed-off version. A Pass 1
+    paper has no level reviews and reads the same way. Outside the manifest, so earlier hashes
+    stand."""
+    versions = paper_service.versions(session, paper)
+    reviews = review_levels.reviews_for_paper(session, paper)
+    by_version: dict[Any, list[Any]] = {}
+    for row in reviews:
+        by_version.setdefault(row.wp_version_id, []).append(row)
+    cycles: list[dict[str, Any]] = []
+    for v in versions:
+        if v.reviewed_by is None:  # a prepared or amended version starts a cycle
+            cycles.append(
+                {
+                    "prepared": {"version": v.version, "by": v.prepared_by, "at": v.prepared_at},
+                    "amendment_reason": v.amendment_reason,
+                    "level_reviews": [
+                        {
+                            "level": r.level,
+                            "reviewer": r.reviewer,
+                            "reviewed_at": r.reviewed_at,
+                            "version": v.version,
+                        }
+                        for r in by_version.get(v.id, [])
+                    ],
+                    "reviewed": None,
+                    "signed_off": None,
+                }
+            )
+        elif cycles:
+            if v.signed_off_by is not None:
+                cycles[-1]["signed_off"] = {
+                    "version": v.version,
+                    "by": v.signed_off_by,
+                    "at": v.signed_off_at,
+                }
+                if cycles[-1]["reviewed"] is None:
+                    cycles[-1]["reviewed"] = {
+                        "version": v.version,
+                        "by": v.reviewed_by,
+                        "at": v.reviewed_at,
+                    }
+            else:
+                cycles[-1]["reviewed"] = {
+                    "version": v.version,
+                    "by": v.reviewed_by,
+                    "at": v.reviewed_at,
+                }
+    return {"configured_levels": list(binder.review_levels or []), "cycles": cycles}
+
+
 def produce(
-    session: Session, store: AttachmentStore, binder: Binder, *, user: str, now: datetime
+    session: Session,
+    store: AttachmentStore,
+    binder: Binder,
+    *,
+    user: str,
+    now: datetime,
+    spine: SpineClient | None = None,
 ) -> bytes:
     if binder.state == BinderState.PURGED:
         raise Conflict(
@@ -188,6 +269,10 @@ def produce(
         session.scalars(select(Wp).where(Wp.binder_id == binder.id).order_by(Wp.ref)).all()
     )
     folders = paper_folders(papers)
+    # The lines verified at assembly, recorded with the assembled event (D30): the archive
+    # states what was verified without asking the Spine again. A binder assembled before
+    # lines were recorded, or without a readable Spine version, reads the Spine as before.
+    lines = assembled_lines(session, binder) or fs_line_service.for_binder(spine, binder)
 
     members: dict[str, bytes] = {}
     members["manifest.json"] = _json(manifest)
@@ -232,8 +317,43 @@ def produce(
     trail.sort(key=lambda entry: entry["at"])
     members["audit_trail.json"] = _json(trail)
     # Spec 3H: the access log as its own record, every read of the file since assembly.
+    # Spec 3H: the discussions and departures logs, every entry.
+    members["discussions.json"] = _json(
+        [
+            {
+                "id": str(d.id),
+                "date": d.date,
+                "participants": list(d.participants),
+                "matter": d.matter,
+                "outcome": d.outcome,
+                "recorded_by": d.recorded_by,
+                "recorded_at": d.recorded_at,
+            }
+            for d in record_service.discussions(session, binder)
+        ]
+    )
+    members["departures.json"] = _json(
+        [
+            {
+                "id": str(d.id),
+                "requirement": d.requirement,
+                "reason": d.reason,
+                "alternative_procedure": d.alternative_procedure,
+                "approved_by": d.approved_by,
+                "recorded_by": d.recorded_by,
+                "recorded_at": d.recorded_at,
+            }
+            for d in record_service.departures(session, binder)
+        ]
+    )
     members["access_log.json"] = _json(
         [{"user": a.user, "action": a.action, "at": a.at} for a in access_rows]
+    )
+    # Stage G (D34): the cross-reference map (spec 3E, 5.4) in the archive, in the shape the
+    # map endpoint serves, built from the references and the FS lines recorded at assembly, so
+    # the member is the same whether or not the Spine answers. Outside the manifest.
+    members["cross_reference_map.json"] = _json(
+        XrefMapOut.build(xref_map.build(session, binder, lines)).model_dump(mode="json")
     )
 
     for paper in papers:
@@ -252,6 +372,14 @@ def produce(
                 "conclusion": paper.conclusion,
                 "status": paper.status,
                 "current_version": paper.current_version,
+                # Spec 3C (D31): the source that generated the paper; absent for a hand-made
+                # one, so earlier archives keep their shape. The provenance itself is in every
+                # version body.
+                **(
+                    {"generated_by": generation.source}
+                    if (generation := paper_service.latest_generation(session, paper))
+                    else {}
+                ),
             }
         )
         for version in paper_service.versions(session, paper):
@@ -270,8 +398,9 @@ def produce(
                 }
             )
         members[f"{folder}/review_notes.json"] = _json(_notes_for_archive(session, paper))
+        members[f"{folder}/reviews.json"] = _json(_reviews_for_archive(session, binder, paper))
         members[f"{folder}/cross_references.json"] = _json(
-            _xrefs_for_archive(session, binder, paper)
+            _xrefs_for_archive(session, binder, paper, lines)
         )
         used: set[str] = set()
         for attachment in session.scalars(

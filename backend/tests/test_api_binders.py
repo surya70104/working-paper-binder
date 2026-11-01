@@ -148,3 +148,39 @@ def test_binders_are_listed(api: TestClient) -> None:
     listed = api.get("/api/binders").json()
     mine = [(x["engagement"], x["template"]) for x in listed if x["id"] in {a["id"], b["id"]}]
     assert mine == [(a["engagement"], "statutory"), (b["engagement"], "tax_audit")]
+
+
+def test_the_index_carries_the_template_sa_refs_and_a_paper_created_from_it_keeps_them(
+    api: TestClient,
+) -> None:
+    """Spec 3B names "SA reference(s)" on the paper; the Binder screen prefills them from the
+    index entry and sends them with the create request, so the index must carry exactly what the
+    template holds, and the created paper must keep what was sent."""
+    binder = create_binder(api)
+    template = api.get("/api/templates/statutory").json()
+    index = api.get(f"/api/binders/{binder['id']}").json()
+    missing = {m["ref"]: m for s in index["sections"] for m in s["missing"]}
+    assert set(missing) == {r["ref"] for r in template["required"]}
+    for required in template["required"]:
+        assert missing[required["ref"]]["sa_refs"] == required["sa_refs"]
+    entry = missing["C-1"]
+    sent = {
+        "ref": entry["ref"],
+        "section": entry["section"],
+        "title": entry["title"],
+        "sa_refs": entry["sa_refs"],
+    }
+    created = api.post(f"/api/binders/{binder['id']}/papers", json=sent)
+    assert created.status_code == 201, created.text
+    assert created.json()["sa_refs"] == entry["sa_refs"]
+    # the same request with references typed in keeps them, trimmed, in order
+    with_refs = api.post(
+        f"/api/binders/{binder['id']}/papers",
+        json={**sent, "ref": "C-2", "sa_refs": [" SA 320 ", "SA 450"]},
+    )
+    assert with_refs.status_code == 201, with_refs.text
+    assert with_refs.json()["sa_refs"] == ["SA 320", "SA 450"]
+    assert api.get(f"/api/papers/{with_refs.json()['id']}").json()["sa_refs"] == [
+        "SA 320",
+        "SA 450",
+    ]

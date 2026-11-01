@@ -11,8 +11,10 @@ Broken references are detected wherever the data allows:
   so that the blocker list says what was checked);
 - a document target must be a document some paper of this binder still carries: when the
   only attachment that carried it is removed, the reference is broken and blocks assembly;
-- a Spine line cannot be checked: the Spine is not part of this product (D21). Those
-  references are listed as *not checked*, never counted as clear.
+- an FS-line target is checked against the linked Spine version's presentation lines by
+  the Spine's stable head_id once the binder is linked and the Spine can be read (Stage
+  C, D30); until then such references are listed as *not checked*, never counted as
+  clear.
 
 Surfaced as information, never as a blocker (spec 3E "superseded paper", pending the
 senior's reading; D26): a paper target whose content has changed since the reference was
@@ -33,6 +35,7 @@ from oak_binder.errors import Conflict, Invalid, NotFound
 from oak_binder.models import Binder, BinderState, Wp, WpAttachment, Xref
 from oak_binder.models.xref import Direction
 from oak_binder.services import papers as paper_service
+from oak_binder.services.fs_lines import FsLines
 
 MAX_FS_LINE = 200
 
@@ -87,6 +90,7 @@ def add(
     direction: str,
     user: str,
     now: datetime,
+    lines: FsLines | None = None,
 ) -> Xref:
     binder = session.get(Binder, paper.binder_id)
     assert binder is not None  # noqa: S101
@@ -112,6 +116,14 @@ def add(
             raise Invalid(f"no paper {to_wp} in this binder: a reference stays within the file")
     if to_fs_line is not None and len(to_fs_line) > MAX_FS_LINE:
         raise Invalid(f"an FS line reference is at most {MAX_FS_LINE} characters")
+    if to_fs_line is not None and lines is not None and lines.available:
+        # The binder is tied to a Spine version whose lines are known: a reference must
+        # name one of them by its stable head_id (D30).
+        if to_fs_line not in lines.lines:
+            raise Invalid(
+                f"FS line {to_fs_line!r} is not a line of the linked Spine version; choose one "
+                "of its lines (GET /api/binders/{id}/fs-lines)"
+            )
     if to_vault_doc is not None and not _document_present(session, binder, to_vault_doc):
         raise Invalid(
             f"no paper of this binder carries document {to_vault_doc}: attach it first, then "
@@ -190,9 +202,21 @@ def for_binder(session: Session, binder: Binder) -> list[Xref]:
     )
 
 
-def check(session: Session, binder: Binder, xref: Xref) -> str | None:
-    """Why the reference is broken, or None when its target is present. A Spine line is not
-    checkable; the caller lists it as not checked."""
+def check(session: Session, binder: Binder, xref: Xref, lines: FsLines | None = None) -> str | None:
+    """Why the reference is broken, or None when its target is present. An FS line is
+    checked against the linked Spine version's lines when they are available (D30);
+    otherwise it is not checkable and the caller lists it as not checked."""
+    if xref.to_fs_line is not None:
+        if lines is None or not lines.available:
+            return None
+        if xref.to_fs_line not in lines.lines:
+            # The target is named by the caller (the blocker's label, the screen's row), so
+            # the reason does not repeat it.
+            return (
+                "not a line of the linked Spine version (it was renamed, removed, or written "
+                "before the binder was linked)"
+            )
+        return None
     if xref.to_wp is not None:
         target = session.get(Wp, xref.to_wp)
         if target is None:
@@ -235,10 +259,10 @@ def target_amended(session: Session, xref: Xref) -> str | None:
     )
 
 
-def broken(session: Session, binder: Binder) -> list[Broken]:
+def broken(session: Session, binder: Binder, lines: FsLines | None = None) -> list[Broken]:
     found: list[Broken] = []
     for xref in for_binder(session, binder):
-        reason = check(session, binder, xref)
+        reason = check(session, binder, xref, lines)
         if reason is not None:
             source = session.get(Wp, xref.from_wp)
             assert source is not None  # noqa: S101

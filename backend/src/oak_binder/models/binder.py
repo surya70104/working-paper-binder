@@ -6,6 +6,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import CheckConstraint, Date, DateTime, Text, UniqueConstraint, Uuid, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from oak_binder.db import Base
@@ -49,6 +50,13 @@ class Binder(Base):
     assembly_hash: Mapped[str | None] = mapped_column(Text)
     retention_until: Mapped[date | None] = mapped_column(Date)
     state: Mapped[str] = mapped_column(Text, nullable=False, server_default=BinderState.OPEN)
+    # The Financial Spine engagement and version the file ties to (spec 3A; D29). Ids of
+    # another service: no foreign key. Both null for a binder without a Spine.
+    spine_engagement_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    spine_version_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    # Pass 2 Stage F (D33): the review levels after the preparer, in order (spec 3D
+    # "configurable per engagement"); NULL keeps the Pass 1 single-review chain.
+    review_levels: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
@@ -60,4 +68,12 @@ class Binder(Base):
         CheckConstraint(f"state IN ({sql_list(BinderState)})", name="ck_binder_state"),
         CheckConstraint(REPORT_CLOCKS_SQL, name="ck_binder_report_clocks"),
         CheckConstraint(ASSEMBLY_SQL, name="ck_binder_assembly"),
+        CheckConstraint(
+            "spine_version_id IS NULL OR spine_engagement_id IS NOT NULL",
+            name="ck_binder_spine_version_needs_engagement",
+        ),
+        CheckConstraint(
+            "review_levels IS NULL OR cardinality(review_levels) >= 1",
+            name="ck_binder_review_levels_not_empty",
+        ),
     )

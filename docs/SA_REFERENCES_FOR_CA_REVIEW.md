@@ -29,7 +29,8 @@ confirmed them.
 ## What the chartered accountant is asked to decide
 
 1. For each engagement type, which Standards on Auditing (or other standards, guidance notes
-   or Act provisions) each required paper should carry when created from the index.
+   or Act provisions) each required paper should carry; the template's list prefills the
+   new-paper form when the paper is created from the index.
 2. Whether the tax audit and internal audit templates should carry SA references at all, or
    references to other frameworks.
 3. Whether W-1 Completion should carry a reference.
@@ -39,4 +40,6 @@ confirmed them.
 Enter the confirmed references in the `sa_refs` list of each required paper in the template
 file, run `python -m oak_binder.templates_check` from `backend\`, and follow
 `docs\TEMPLATE_AUTHORING.md`. Papers already created on existing binders keep whatever
-references they hold; the template affects papers created from the index afterwards.
+references they hold. The template's references prefill the new-paper form when a missing
+paper is created from the index, where the preparer may edit them before creating, so the
+template affects papers created from the index afterwards.

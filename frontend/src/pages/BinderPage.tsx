@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api, STATUS_LABEL, type Binder, type RequiredPaper } from "../api";
+import { BinderRecords } from "../components/BinderRecords";
+import { SOURCE_LABEL } from "../components/GeneratedPanel";
+import { SpineLinkCard } from "../components/SpineLinkCard";
+import { ReviewLevelsCard } from "../components/ReviewLevelsCard";
+import { SpinePapersCard } from "../components/SpinePapersCard";
 import { href, navigate } from "../router";
 import { useAction } from "../useAction";
 
@@ -17,7 +22,10 @@ export function countdownText(binder: Binder): string {
 export function BinderPage({ id }: { id: string }) {
   const [binder, setBinder] = useState<Binder | null>(null);
   const [reportDate, setReportDate] = useState("");
-  const [draft, setDraft] = useState({ ref: "", section: "A", title: "" });
+  // sa_refs is typed as the preparer sees it (comma separated); the index template's
+  // references for a missing paper prefill it (spec 3B "SA reference(s)"), editable before
+  // the paper is created.
+  const [draft, setDraft] = useState({ ref: "", section: "A", title: "", sa_refs: "" });
 
   const load = useCallback(async () => {
     const b = await api.getBinder(id);
@@ -32,13 +40,23 @@ export function BinderPage({ id }: { id: string }) {
   function createPaper(event: React.FormEvent) {
     event.preventDefault();
     void run(async () => {
-      const paper = await api.createPaper(id, draft);
+      const { sa_refs, ...fields } = draft;
+      const refs = sa_refs
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const paper = await api.createPaper(id, { ...fields, sa_refs: refs });
       navigate({ name: "paper", id: paper.id });
     });
   }
 
   function prefill(required: RequiredPaper) {
-    setDraft({ ref: required.ref, section: required.section, title: required.title });
+    setDraft({
+      ref: required.ref,
+      section: required.section,
+      title: required.title,
+      sa_refs: required.sa_refs.join(", "),
+    });
   }
 
   if (error && !binder) {
@@ -66,6 +84,10 @@ export function BinderPage({ id }: { id: string }) {
           {binder.template_label} · {binder.state} ·{" "}
           <a href={href({ name: "review-notes", id })} className="underline">
             Review notes
+          </a>{" "}
+          ·{" "}
+          <a href={href({ name: "xref-map", id })} className="underline">
+            Cross-reference map
           </a>{" "}
           ·{" "}
           <a href={href({ name: "assembly", id })} className="underline">
@@ -137,6 +159,14 @@ export function BinderPage({ id }: { id: string }) {
                     <li key={p.id} className="flex items-baseline justify-between px-4 py-2">
                       <a href={href({ name: "paper", id: p.id })} className="hover:underline">
                         <span className="font-mono text-sm">{p.ref}</span> {p.title}
+                        {p.generated_by && (
+                          <span
+                            className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-xs text-indigo-900"
+                            data-testid="generated-mark"
+                          >
+                            generated · {SOURCE_LABEL[p.generated_by] ?? p.generated_by}
+                          </span>
+                        )}
                       </a>
                       <span className="text-sm text-slate-500">{STATUS_LABEL[p.status]}</span>
                     </li>
@@ -167,6 +197,14 @@ export function BinderPage({ id }: { id: string }) {
           <p className="mt-2 text-slate-500">No papers yet.</p>
         )}
       </section>
+
+      <SpineLinkCard binderId={id} state={binder.state} onChanged={load} />
+
+      <SpinePapersCard binderId={id} state={binder.state} onChanged={load} />
+
+      <ReviewLevelsCard binder={binder} onChanged={load} />
+
+      <BinderRecords binderId={id} state={binder.state} />
 
       <section>
         <h2 className="text-lg font-semibold">New working paper</h2>
@@ -206,6 +244,15 @@ export function BinderPage({ id }: { id: string }) {
               disabled={!open}
               onChange={(e) => setDraft({ ...draft, title: e.target.value })}
               className="rounded border border-slate-300 px-2 py-1"
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            SA references (comma separated; prefilled from the index template)
+            <input
+              value={draft.sa_refs}
+              disabled={!open}
+              onChange={(e) => setDraft({ ...draft, sa_refs: e.target.value })}
+              className="rounded border border-slate-300 px-2 py-1 font-mono text-xs"
             />
           </label>
           <button

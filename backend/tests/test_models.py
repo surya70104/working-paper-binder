@@ -19,6 +19,11 @@ SPEC_FIELDS: dict[str, set[str]] = {
         "assembly_hash",
         "retention_until",
         "state",
+        # Pass 2 Stage B (D29): the Spine engagement and version the file ties to.
+        "spine_engagement_id",
+        "spine_version_id",
+        # Pass 2 Stage F (D33): the review levels after the preparer (spec 3D).
+        "review_levels",
     },
     "wp": {
         "binder_id",
@@ -46,6 +51,22 @@ SPEC_FIELDS: dict[str, set[str]] = {
         "amendment_reason",
     },
     "wp_attachment": {"wp_version_id", "vault_doc_id", "identifying_chars", "sha256"},
+    # Pass 2 Stage F (D33): one row per level review of a prepared version (spec 3D).
+    "wp_review": {"wp_id", "wp_version_id", "level", "reviewer", "reviewed_at"},
+    # Pass 2 Stage D (D31): where a generated paper came from (spec 3C), append-only.
+    "wp_generation": {
+        "wp_id",
+        "source",
+        "module",
+        "module_version",
+        "run_id",
+        "generated_at",
+        "received_by",
+        "received_at",
+        "payload",
+        "content_hash_at_intake",
+        "spine_figures",
+    },
     # Stage 6: the append-only record of assembly, amendment, purge and production (spec 3F,
     # 3G: "the manifest records the amendment", "the purge writes its own record").
     "binder_event": {"binder_id", "kind", "actor", "at", "reason", "details"},
@@ -63,6 +84,10 @@ SPEC_FIELDS: dict[str, set[str]] = {
     "access_log": {"binder_id", "user", "action", "at"},
     # Spec 4: xref from_wp · to_wp | to_fs_line | to_vault_doc · direction
     "xref": {"from_wp", "to_wp", "to_fs_line", "to_vault_doc", "direction"},
+    # Spec 4: discussion binder · date · participants[] · matter · outcome
+    "discussion": {"binder_id", "date", "participants", "matter", "outcome"},
+    # Spec 4: departure binder · requirement · reason · alternative_procedure · approved_by
+    "departure": {"binder_id", "requirement", "reason", "alternative_procedure", "approved_by"},
 }
 
 

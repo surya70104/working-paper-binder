@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { api, type Attachment, type Binder, type Xref } from "../api";
+import { api, type Attachment, type Binder, type FsLines, type Xref } from "../api";
 import { href } from "../router";
 
 // Cross-references on one paper (spec 3B, 3E): out (this paper refers to something) and in
@@ -20,7 +20,15 @@ function targetOf(x: Xref) {
       </a>
     );
   }
-  if (x.to_fs_line !== null) return <>FS line “{x.to_fs_line}”</>;
+  if (x.to_fs_line !== null) {
+    return x.to_fs_line_label ? (
+      <>
+        FS line “{x.to_fs_line_label}” <code className="font-mono text-xs text-slate-500">{x.to_fs_line}</code>
+      </>
+    ) : (
+      <>FS line “{x.to_fs_line}”</>
+    );
+  }
   if (x.to_attachment_id && x.to_filename) {
     return (
       <>
@@ -124,6 +132,7 @@ export function CrossReferences({
   const [doc, setDoc] = useState("");
   const [binder, setBinder] = useState<Binder | null>(null);
   const [binderError, setBinderError] = useState<string | null>(null);
+  const [fsLines, setFsLines] = useState<FsLines | null>(null);
 
   const out = xrefs.filter((x) => x.outgoing);
   const inbound = xrefs.filter((x) => !x.outgoing);
@@ -145,6 +154,22 @@ export function CrossReferences({
       cancelled = true;
     };
   }, [kind, binder, binderError, binderId]);
+  // The FS-line picker: the linked Spine version's lines when they can be read, else free text.
+  useEffect(() => {
+    if (kind !== "fs_line" || fsLines) return;
+    let cancelled = false;
+    api
+      .getFsLines(binderId)
+      .then((lines) => {
+        if (!cancelled) setFsLines(lines);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setFsLines({ available: false, reason: e.message, version_locked: false, lines: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, fsLines, binderId]);
   const candidates = (binder?.sections ?? [])
     .flatMap((s) => s.papers)
     .filter((p) => p.id !== paperId);
@@ -248,7 +273,25 @@ export function CrossReferences({
               </select>
             </label>
           )}
-          {kind === "fs_line" && (
+          {kind === "fs_line" && fsLines?.available && (
+            <label className="grid gap-1">
+              FS line of the linked Spine version
+              <select
+                value={fsLine}
+                onChange={(e) => setFsLine(e.target.value)}
+                className="rounded border border-slate-300 px-2 py-1"
+                data-testid="xref-fs-line"
+              >
+                <option value="">Choose a line…</option>
+                {fsLines.lines.map((line) => (
+                  <option key={line.head_id} value={line.head_id}>
+                    {line.label} ({line.head_id}){line.current ? ` · ₹${line.current}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {kind === "fs_line" && fsLines && !fsLines.available && (
             <label className="grid gap-1">
               FS line (as it appears in the financial statements)
               <input
@@ -257,8 +300,12 @@ export function CrossReferences({
                 onChange={(e) => setFsLine(e.target.value)}
                 className="rounded border border-slate-300 px-2 py-1"
               />
+              <span className="text-xs text-slate-500" data-testid="xref-fs-line-unchecked">
+                Not checked: {fsLines.reason}
+              </span>
             </label>
           )}
+          {kind === "fs_line" && !fsLines && <p className="text-xs text-slate-500">Loading lines…</p>}
           {kind === "document" && (
             <label className="grid gap-1">
               Document id (this paper's attachments are offered; any document attached in this

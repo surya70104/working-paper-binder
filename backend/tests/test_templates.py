@@ -16,6 +16,7 @@ from oak_binder.services.templates import (
     SPEC_SECTION_NAMES,
     TEMPLATES_DIR,
     TemplateError,
+    generated_section,
     list_templates,
     load_template,
     parse_template,
@@ -177,3 +178,49 @@ def test_unknown_or_missing_keys_are_refused() -> None:
 def test_the_file_must_declare_its_own_name() -> None:
     with pytest.raises(TemplateError, match="file declares name 'statutory'"):
         parse_template("tax_audit", raw("statutory"))
+
+
+def test_a_generated_reference_required_outside_its_section_is_refused() -> None:
+    """D32: the Binder generates <area>-L in that area and W-ADJ in W; a template that requires
+    one elsewhere would never be satisfied, so the loader refuses it by name."""
+    data = raw()
+    data["required"].append({"ref": "D-L", "section": "E", "title": "Lead schedule", "sa_refs": []})
+    with pytest.raises(TemplateError, match="generates D-L in section D"):
+        parse_template("statutory", data)
+    data = raw()
+    data["required"].append({"ref": "W-ADJ", "section": "X", "title": "Adjustments", "sa_refs": []})
+    with pytest.raises(TemplateError, match="generates W-ADJ in section W"):
+        parse_template("statutory", data)
+
+
+def test_a_generated_reference_required_in_its_own_section_is_accepted_and_listed() -> None:
+    data = raw()
+    data["required"].append({"ref": "D-L", "section": "D", "title": "Lead schedule", "sa_refs": []})
+    data["required"].append({"ref": "W-ADJ", "section": "W", "title": "Adjustments", "sa_refs": []})
+    template = parse_template("statutory", data)
+    assert [(r.ref, r.section) for r in template.generated_required()] == [
+        ("D-L", "D"),
+        ("W-ADJ", "W"),
+    ]
+    # the slot in D now exists, so the "no required paper in any area" placeholder is gone
+    assert not any(
+        "no required paper in any financial statement area" in f for f in template.placeholders()
+    )
+
+
+@pytest.mark.parametrize(
+    ("ref", "section"),
+    [
+        ("D-L", "D"),
+        ("T-L", "T"),
+        ("W-ADJ", "W"),
+        ("A-L", None),
+        ("D-1", None),
+        ("DL", None),
+        ("W-ADJ2", None),
+    ],
+)
+def test_generated_section_names_only_the_binders_own_references(
+    ref: str, section: str | None
+) -> None:
+    assert generated_section(ref) == section

@@ -30,7 +30,17 @@ from sqlalchemy.orm import Session
 
 from oak_binder.errors import Conflict, Invalid, NotFound
 from oak_binder.hashing import content_hash
-from oak_binder.models import SECTIONS, Binder, BinderState, Wp, WpAttachment, WpStatus, WpVersion
+from oak_binder.models import (
+    SECTIONS,
+    Binder,
+    BinderState,
+    Wp,
+    WpAttachment,
+    WpGeneration,
+    WpStatus,
+    WpVersion,
+)
+from oak_binder.models.generation import LOCKED_FIELDS, locked_fields_for
 from oak_binder.services.binders import require_open
 
 CONTENT_FIELDS: tuple[str, ...] = (
@@ -64,7 +74,61 @@ def snapshot(session: Session, paper: Wp) -> dict[str, Any]:
         }
         for a in rows
     ]
+    generation = latest_generation(session, paper)
+    if generation is not None:
+        # A generated paper's provenance travels in every version (spec 3C; D31), so the
+        # content hash covers the inputs and citations. Hand-made papers gain no key.
+        body["generated"] = provenance_block(generation)
     return body
+
+
+# --- generated papers (spec 3C; Pass 2 Stage D, D31) -----------------------------------------
+
+
+def latest_generation(session: Session, paper: Wp) -> WpGeneration | None:
+    """The most recent intake record of a generated paper, or None for a hand-made one."""
+    return session.scalars(
+        select(WpGeneration)
+        .where(WpGeneration.wp_id == paper.id)
+        .order_by(WpGeneration.received_at.desc(), WpGeneration.id.desc())
+        .limit(1)
+    ).first()
+
+
+def provenance_block(row: WpGeneration) -> dict[str, Any]:
+    """The provenance as it is embedded in a version body: who generated and delivered the
+    paper and when, the module's fields' hash at intake, the Spine-figures check, and the
+    whole block as received (inputs, citations and the source block)."""
+    return {
+        "source": row.source,
+        "module": row.module,
+        "module_version": row.module_version,
+        "run_id": row.run_id,
+        "generated_at": row.generated_at.isoformat(),
+        "received_by": row.received_by,
+        "received_at": row.received_at.isoformat(),
+        "content_hash_at_intake": row.content_hash_at_intake,
+        "spine_figures_check": row.spine_figures,
+        "payload": dict(row.payload),
+    }
+
+
+def refuse_locked(session: Session, paper: Wp, changes: Mapping[str, Any]) -> None:
+    """A generated paper's module fields are not retyped here (spec 3C; decision 3): a change
+    to one is refused and the module is named. The conclusion stays a person's (spec 7)."""
+    if not any(name in changes for name in LOCKED_FIELDS):
+        return
+    generation = latest_generation(session, paper)
+    if generation is None:
+        return
+    touched = [name for name in locked_fields_for(generation.source) if name in changes]
+    if not touched:
+        return
+    raise Invalid(
+        f"{', '.join(touched)} of {paper.ref} came from {generation.module} "
+        f"({generation.source}) and is not retyped here (spec 3C); regenerate the paper "
+        "from the module. The conclusion may be written."
+    )
 
 
 def _clean_text(value: Any) -> str | None:
@@ -142,6 +206,7 @@ def update_paper(session: Session, paper: Wp, changes: Mapping[str, Any]) -> Wp:
     if "ref" in changes:
         raise Invalid("the reference is stable and cannot be changed (spec 3B)")
     require_open(binder_of(session, paper))
+    refuse_locked(session, paper, changes)
     cleaned = validate_content(changes)
     if apply_changes(paper, cleaned) and paper.status != WpStatus.DRAFT:
         paper.status = WpStatus.DRAFT
@@ -240,10 +305,18 @@ def submit_for_review(session: Session, paper: Wp) -> Wp:
     return paper
 
 
-def review(session: Session, paper: Wp, user: str, now: datetime) -> WpVersion:
+def review(session: Session, paper: Wp, user: str, now: datetime) -> WpVersion | None:
     """The reviewer's sign-off: in_review -> reviewed, writing a version that carries both
-    the preparer (copied from the prepared version) and the reviewer."""
-    require_not_purged(binder_of(session, paper))
+    the preparer (copied from the prepared version) and the reviewer.
+
+    With review levels configured on the binder (spec 3D; Stage F, D33) each call records
+    the next level's review of the prepared version, by ``user``, as an append-only row; the
+    paper stays in review and None is returned until the last configured level, whose
+    reviewer is the one the reviewed version names."""
+    from oak_binder.services import review_levels
+
+    binder = binder_of(session, paper)
+    require_not_purged(binder)
     _expect_status(paper, WpStatus.IN_REVIEW, action="review")
     prepared = current_version(session, paper)
     if prepared is None:
@@ -254,6 +327,12 @@ def review(session: Session, paper: Wp, user: str, now: datetime) -> WpVersion:
             f"paper {paper.ref} changed since version {prepared.version} was prepared; "
             "it must be prepared again"
         )
+    if review_levels.levels_of(binder):
+        _row, completed = review_levels.record_level_review(
+            session, binder, paper, prepared, user, now
+        )
+        if not completed:
+            return None
     version = WpVersion(
         wp_id=paper.id,
         version=next_version_number(session, paper),

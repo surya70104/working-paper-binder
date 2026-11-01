@@ -26,7 +26,8 @@ application rather than producing a wrong index.
   ],
   "required": [
     {"ref": "C-1", "section": "C", "title": "Materiality memo", "sa_refs": []}
-  ]
+  ],
+  "areas": {}
 }
 ```
 
@@ -40,7 +41,17 @@ application rather than producing a wrong index.
 | `required[].ref` | a required paper's reference | non-blank, unique within the file; stable, never reused (spec §3B) |
 | `required[].section` | where it is filed | one of the file's section codes; completeness matches reference **and** section |
 | `required[].title` | the paper's title | non-blank |
-| `required[].sa_refs` | SA references the paper carries when created from the index | a list of non-blank text; may be empty |
+| `required[].sa_refs` | SA references the firm expects on the paper. The Binder screen's Create action for a missing paper prefills them, with the reference, section and title, into the new-paper form; the preparer may edit them before the paper is created, and they are saved on the paper | a list of non-blank text; may be empty |
+| `areas` (optional) | the firm's map of Schedule III heads to areas D–T, for lead schedules the Financial Spine produces (Stage E, D32) | an object keyed by area section codes D–T of this file; each value an object with `heads` and optional `objective` and `procedure` |
+| `areas.<code>.heads` | the Schedule III head ids the area covers, spelled exactly as the Spine's `GET /api/tree` serves them | a list of non-blank head ids; no id listed twice anywhere in the file; **ids only, never prefixes**: a listed head covers itself and every descendant found through the tree's `parent` field |
+| `areas.<code>.objective`, `.procedure` | approved wording inserted into a generated lead schedule's objective and procedure; the preparer may still edit them | non-blank text or absent |
+
+A required reference the Binder generates itself may be listed so that the generated paper
+fills the slot: `<area>-L` is the lead schedule of area D–T (title "Lead schedule: <area
+name>") and `W-ADJ` is the adjustment chain, both produced from the Financial Spine (D32).
+The loader accepts them only in the section where they are generated and refuses `D-L` in E,
+or `W-ADJ` outside W, by name, since a paper there could never satisfy the requirement. The
+check command lists such entries.
 
 A required paper is "missing" on a binder until a paper with that reference exists in that
 section. The count of missing required papers blocks assembly (spec §3A, §3F).
@@ -63,8 +74,52 @@ Left to the firm, and therefore awaiting a chartered accountant:
 3. **The five derived titles.** Only "Materiality memo" is the spec's wording. Confirm or
    rename: A-1 Acceptance and continuance, B-1 Planning and risk assessment, W-1 Completion,
    X-1 Report and opinion, Z-1 Engagement quality review.
+5. **The area map** (`areas`). Which Schedule III heads each area D–T covers, so the Binder
+   can generate that area's lead schedule from the Financial Spine (Stage E, D32). **The
+   shipped files carry an empty map**, and no lead schedule can be generated for a shipped
+   template until the firm enters one; the Binder screen's Spine papers card, the status
+   endpoint and the check command say so by name. The adjustment chain needs no map. See
+   "The area map" below for the rules.
 4. **SA references** per required paper. The shipped files carry none; the previously seeded
    numbers are listed for review in `docs\SA_REFERENCES_FOR_CA_REVIEW.md`.
+
+## The area map
+
+An area covers the heads it lists and all their descendants. Descent is read **only** from the
+`parent` field each head carries in the Spine's `GET /api/tree` response: a head is a child of
+another when its `parent` equals that head's `id`, and for no other reason. The Binder derives
+nothing from the dots in an id, so listing `"BS.A"` means the head whose id is `BS.A` and
+whatever the tree places under it, not "every id starting with BS.A". Listing a parent assigns
+a whole branch; listing a leaf assigns that leaf alone.
+
+The shape, with ids that illustrate the format only (use the ids the Spine's tree actually
+serves, read with `GET /api/tree`):
+
+```json
+"areas": {
+  "D": {"heads": ["<head id of the area's face head>"], "objective": "<approved wording, optional>"},
+  "E": {"heads": ["<head id>", "<another head id>"]}
+}
+```
+
+Validation runs in four steps:
+
+1. **Syntax**, by the loader, whenever the file is read: `areas` is an object keyed by area
+   section codes D–T of this file; each value is an object with `heads`, a list of non-blank
+   ids, and optional non-blank `objective` and `procedure`; no id is listed twice anywhere; no
+   other key is accepted. A file that fails this is refused.
+2. **Existence**, against the tree: every listed id is a head the Spine serves; an unknown id
+   is refused by name.
+3. **No overlap after expansion**: the covered sets of any two areas are disjoint; a
+   descendant listed under one area while its ancestor is listed under another is refused by
+   name.
+4. **Coverage report**: mappable heads in no area are listed, not refused, since the firm may
+   leave an area to a hand-made paper.
+
+Steps 2–4 need the tree, so the check command runs them only when given one (below); at
+generation time the Binder reads the tree from the Spine and refuses the request by name if
+steps 2 or 3 fail. A mapped area whose heads carry no ledger in the version still gets its lead
+schedule, which says so in the Spine's own terms.
 
 ## Checking a file before it is used
 
@@ -74,8 +129,8 @@ From `backend\`:
 .venv\Scripts\python.exe -m oak_binder.templates_check
 ```
 
-checks the four shipped files and prints, for each, whether it loads and which placeholders
-it still carries. To check a draft file before copying it into place:
+checks the four shipped files and prints, for each, whether it loads, which placeholders it
+still carries and which required papers the Binder generates itself. To check a draft file before copying it into place:
 
 ```powershell
 .venv\Scripts\python.exe -m oak_binder.templates_check path\to\statutory.json
@@ -83,6 +138,20 @@ it still carries. To check a draft file before copying it into place:
 
 The command exits 0 when every file loads, 1 when any file is refused. A file that loads but
 still reports placeholders is usable and stays marked draft on the Binders screen.
+
+The area map is reported too: `area map: empty …` for the shipped files, or the areas and
+the heads they list. The tree checks (steps 2–4 above) run only when a tree is given, since a
+file check should not reach the network unasked:
+
+```powershell
+.venv\Scripts\python.exe -m oak_binder.templates_check --tree path\to\tree.json path\to\statutory.json
+.venv\Scripts\python.exe -m oak_binder.templates_check --spine path\to\statutory.json
+```
+
+`--tree` takes a saved `GET /api/tree` response; `--spine` reads the live tree from the
+configured `OAK_SPINE_URL`, read-only. The output names each refusal (`area map REFUSED: …`),
+how many heads each area covers after expansion, and the mappable heads in no area. A map
+refused against the tree exits 1.
 
 ## Applying confirmed content
 

@@ -1,0 +1,33 @@
+{
+  "paper": {
+    "ref": "D-4",
+    "section": "D",
+    "title": "Revenue: analytical review, FY2025-26 against FY2024-25",
+    "sa_refs": ["SA 520"],
+    "objective": "Identify revenue lines whose movement against the prior year exceeds the thresholds and obtain explanations.",
+    "procedure": "Current year compared with prior year by revenue stream; variances above either threshold investigated with management and corroborated.",
+    "population_sample": null,
+    "result": "Two streams exceeded the thresholds: export sales (+18.2%) and scrap sales (-31.0%). Explanations obtained and corroborated to shipping records and the scrap contract.",
+    "conclusion": "Movements are consistent with the business; no further procedures required."
+  },
+  "generated": {
+    "source": "analytical_review",
+    "module": "oak_analytical_review",
+    "module_version": "example",
+    "run_id": "ar-run-example-001",
+    "generated_at": "2026-10-31T11:00:00+05:30",
+    "inputs": {
+      "current": {"period": "FY2025-26", "source": "Financial Spine aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+      "prior": {"period": "FY2024-25", "source": "signed financial statements FY2024-25"},
+      "streams": ["domestic sales", "export sales", "scrap sales"]
+    },
+    "citations": [
+      {"source": "Financial Spine", "version_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "head_id": "PL.R.1"},
+      {"source": "signed_fs_fy25.pdf", "page": 14}
+    ],
+    "analytical_review": {
+      "periods": {"current": "FY2025-26", "prior": "FY2024-25"},
+      "thresholds": {"absolute": "250000.00", "relative_percent": 10}
+    }
+  }
+}

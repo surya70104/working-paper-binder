@@ -109,6 +109,18 @@ export function AssemblyPage({ id }: { id: string }) {
               {status.assembly_hash}
             </code>
           </p>
+          {status.manifest?.spine && (
+            <p className="mt-2 text-sm" data-testid="manifest-spine">
+              Financial Spine: engagement <code className="font-mono text-xs">{status.manifest.spine.engagement_id}</code>
+              {status.manifest.spine.version_id ? (
+                <>
+                  {" "}· version <code className="font-mono text-xs">{status.manifest.spine.version_id}</code>
+                </>
+              ) : (
+                " · no version"
+              )}
+            </p>
+          )}
           {status.manifest && (
             <table className="mt-3 w-full text-sm">
               <thead className="text-left text-slate-600">
