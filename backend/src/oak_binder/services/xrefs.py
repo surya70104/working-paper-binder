@@ -16,10 +16,15 @@ Broken references are detected wherever the data allows:
   C, D30); until then such references are listed as *not checked*, never counted as
   clear.
 
-Surfaced as information, never as a blocker (spec 3E "superseded paper", pending the
-senior's reading; D26): a paper target whose content has changed since the reference was
-made, found by comparing the content hash of the target's version at that time with its
-current version. Sign-off steps copy content, so only a real change counts.
+A superseded paper target (spec 3E: a reference "pointing at a deleted or superseded paper
+is surfaced, and blocks assembly"; completion work, D36): a paper target whose content has changed
+since the reference was made, found by comparing the content hash of the target's version at
+that time with its current version (sign-off steps copy content, so only a real change
+counts). Papers are never deleted here, so this is the one way a paper target is superseded.
+Such a reference blocks assembly until a person confirms it against the target's current
+version (``confirm``), which records who, when and which version on the reference; a later
+change to the target supersedes the confirmation in turn. Removing the reference, while the
+binder is open, clears the matter too.
 """
 
 from __future__ import annotations
@@ -232,9 +237,9 @@ def check(session: Session, binder: Binder, xref: Xref, lines: FsLines | None = 
 
 
 def target_amended(session: Session, xref: Xref) -> str | None:
-    """How the referenced paper has changed since the reference was made, or None. Only a
-    paper target can change; the comparison is by content hash, so a review or sign-off of
-    the same content does not count."""
+    """How the referenced paper has changed since the reference was made, or since it was last
+    confirmed, or None. Only a paper target can change; the comparison is by content hash, so
+    a review or sign-off of the same content does not count (D26, D36)."""
     if xref.to_wp is None:
         return None
     target = session.get(Wp, xref.to_wp)
@@ -244,13 +249,18 @@ def target_amended(session: Session, xref: Xref) -> str | None:
     if not rows:
         return None
     current = rows[-1]
-    before = [v for v in rows if v.prepared_at <= xref.created_at]
-    if not before:
+    if xref.confirmed_version is not None:
+        then = next((v for v in rows if v.version == xref.confirmed_version), None)
+        if then is None or then.content_hash == current.content_hash:
+            return None
         return (
-            f"paper {target.ref} had no prepared version when this reference was made; it "
-            f"is now at version {current.version}"
+            f"paper {target.ref} has been amended since this reference was confirmed at "
+            f"version {then.version} (now version {current.version})"
         )
-    then = before[-1]
+    before = [v for v in rows if v.prepared_at <= xref.created_at]
+    # A reference made while the target was still a draft has nothing to be superseded until
+    # the target's first prepared content changes: the first version is the baseline then.
+    then = before[-1] if before else rows[0]
     if then.content_hash == current.content_hash:
         return None
     return (
@@ -259,10 +269,49 @@ def target_amended(session: Session, xref: Xref) -> str | None:
     )
 
 
+SUPERSEDED_ACTION = "confirm the reference against the current version, or remove it"
+
+
+def confirm(session: Session, xref: Xref, *, user: str, now: datetime) -> Xref:
+    """A person confirms that this reference still holds against its target's current version
+    (spec 3E; D36). Allowed on an open or assembled binder, never on a purged one; refused when
+    the target has not changed, so a confirmation always records a real decision. The
+    reference then stops blocking until the target changes again."""
+    if xref.to_wp is None:
+        raise Invalid(
+            "only a reference to a paper can be confirmed; its target cannot be superseded"
+        )
+    source = session.get(Wp, xref.from_wp)
+    assert source is not None  # noqa: S101
+    binder = session.get(Binder, source.binder_id)
+    assert binder is not None  # noqa: S101
+    if binder.state == BinderState.PURGED:
+        raise Conflict(f"binder for {binder.engagement!r} is purged; nothing can be confirmed")
+    change = target_amended(session, xref)
+    if change is None:
+        raise Conflict(
+            f"nothing to confirm: the target of this reference has not changed since the "
+            f"reference was {'confirmed' if xref.confirmed_at else 'made'}"
+        )
+    target = session.get(Wp, xref.to_wp)
+    assert target is not None  # noqa: S101
+    current = paper_service.versions(session, target)[-1]
+    xref.confirmed_by = user
+    xref.confirmed_at = now
+    xref.confirmed_version = current.version
+    session.flush()
+    return xref
+
+
 def broken(session: Session, binder: Binder, lines: FsLines | None = None) -> list[Broken]:
     found: list[Broken] = []
     for xref in for_binder(session, binder):
         reason = check(session, binder, xref, lines)
+        if reason is None:
+            # Spec 3E: a superseded target blocks too, until the reference is confirmed (D36).
+            change = target_amended(session, xref)
+            if change is not None:
+                reason = f"superseded: {change}; {SUPERSEDED_ACTION}"
         if reason is not None:
             source = session.get(Wp, xref.from_wp)
             assert source is not None  # noqa: S101

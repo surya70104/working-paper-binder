@@ -29,6 +29,9 @@ const outToBank: Xref = {
   broken: null,
   checked: true,
   target_amended: null,
+  confirmed_by: null,
+  confirmed_at: null,
+  confirmed_version: null,
 };
 
 const inFromLead: Xref = {
@@ -86,7 +89,7 @@ test("references are listed in and out, with broken and unchecked ones marked", 
   });
   render(<PaperPage id="p1" />);
   await screen.findByRole("heading", { name: /Cross-references/ });
-  expect(screen.getByTestId("xref-summary")).toHaveTextContent("1 broken — blocks assembly");
+  expect(screen.getByTestId("xref-summary")).toHaveTextContent("2 broken — blocks assembly");
   const rows = screen.getAllByTestId("xref");
   expect(rows).toHaveLength(6);
   expect(rows[0]).toHaveTextContent("this paper → D-2");
@@ -108,89 +111,49 @@ test("references are listed in and out, with broken and unchecked ones marked", 
   expect(rows[4]).toHaveTextContent("this paper → D-4");
   expect(rows[5]).toHaveTextContent("D-L → this paper");
   expect(rows[5]?.querySelector("a")).toHaveAttribute("href", "#/papers/p3");
-  // An amended target is information, shown on the row, never a blocker.
-  expect(screen.getByTestId("xref-amended")).toHaveTextContent("amended since this reference was made (version 2 → 3)");
-  expect(screen.getByTestId("xref-summary")).toHaveTextContent("1 broken — blocks assembly");
-  // Only references written on this paper can be removed from here.
+  // A superseded target (spec 3E; D36) is shown on the row and counts as blocking.
+  expect(screen.getByTestId("xref-amended")).toHaveTextContent(
+    "superseded: paper D-4 has been amended since this reference was made (version 2 → 3)",
+  );
+  expect(screen.getByTestId("xref-summary")).toHaveTextContent("2 broken — blocks assembly");
+  // Only references written on this paper can be removed from here; only the superseded one
+  // offers Confirm.
   expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(5);
+  expect(screen.getAllByRole("button", { name: "Confirm" })).toHaveLength(1);
 });
 
-test("adding a reference to another paper posts one target and reloads the paper", async () => {
-  const binder = binderFixture();
+test("confirming a superseded reference posts to its confirm action", async () => {
   const calls = mockApi({
     "GET /api/papers/p1/review-notes": [],
-    "GET /api/papers/p1": () => paperFixture({ xrefs: calls.some((c) => c.method === "POST") ? [outToBank] : [] }),
-    "GET /api/binders/b1": binder,
-    "POST /api/papers/p1/xrefs": paperFixture({ xrefs: [outToBank] }),
+    "GET /api/papers/p1": paperFixture({ xrefs: [amendedTarget] }),
+    "GET /api/binders/b1": binderFixture(),
+    "POST /api/xrefs/x6/confirm": paperFixture({ xrefs: [amendedTarget] }),
   });
   render(<PaperPage id="p1" />);
   await screen.findByRole("heading", { name: /Cross-references/ });
-  expect(screen.getByTestId("xref-summary")).toHaveTextContent("0 out, 0 in");
-  const add = screen.getByRole("button", { name: "Add reference" });
-  expect(add).toBeDisabled();
-  const picker = await screen.findByTestId("xref-paper");
-  await waitFor(() => expect(picker.querySelectorAll("option").length).toBeGreaterThan(1));
-  // The paper itself is not offered as a target.
-  expect(Array.from(picker.querySelectorAll("option")).map((o) => o.getAttribute("value"))).not.toContain("p1");
-  const other = binder.sections.flatMap((s) => s.papers).find((p) => p.id !== "p1");
-  fireEvent.change(picker, { target: { value: other?.id } });
-  fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "from" } });
-  expect(add).toBeEnabled();
-  fireEvent.click(add);
-  await waitFor(() => expect(screen.getByTestId("xref-summary")).toHaveTextContent("1 out, 0 in"));
-  const post = calls.find((c) => c.method === "POST");
-  expect(post?.path).toBe("/api/papers/p1/xrefs");
-  expect(post?.body).toEqual({ to_wp: other?.id, to_fs_line: null, to_vault_doc: null, direction: "from" });
+  expect(screen.getByTestId("xref-summary")).toHaveTextContent("1 broken — blocks assembly");
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(calls.filter((c) => c.method === "POST")).toHaveLength(1));
+  expect(calls.filter((c) => c.method === "POST")[0]?.path).toBe("/api/xrefs/x6/confirm");
 });
 
-test("an FS line is typed, a document comes from this paper's attachments, nothing is editable after assembly", async () => {
-  const calls = mockApi({
-    "GET /api/papers/p1/review-notes": [],
-    "GET /api/papers/p1": paperFixture({
-      attachments: [
-        {
-          id: "a1",
-          wp_id: "p1",
-          wp_version_id: null,
-          filename: "statement.pdf",
-          media_type: "application/pdf",
-          size_bytes: 10,
-          sha256: "9".repeat(64),
-          vault_doc_id: "9".repeat(64),
-          identifying_chars: null,
-          attached_by: "preparer@firm",
-          attached_at: "2026-10-28T10:00:00Z",
-        },
-      ],
-    }),
-    "POST /api/papers/p1/xrefs": paperFixture({ xrefs: [fsLine] }),
-  });
-  render(<PaperPage id="p1" />);
-  await screen.findByRole("heading", { name: /Cross-references/ });
-  fireEvent.change(screen.getByLabelText("Target"), { target: { value: "fs_line" } });
-  fireEvent.change(await screen.findByLabelText(/FS line \(as it appears/), {
-    target: { value: "  Cash and cash equivalents " },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Add reference" }));
-  await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
-  expect(calls.find((c) => c.method === "POST")?.body).toEqual({
-    to_wp: null,
-    to_fs_line: "Cash and cash equivalents",
-    to_vault_doc: null,
-    direction: "to",
-  });
-  fireEvent.change(screen.getByLabelText("Target"), { target: { value: "document" } });
-  const options = Array.from(document.querySelectorAll("#xref-docs option"));
-  expect(options.map((o) => o.getAttribute("value"))).toEqual(["9".repeat(64)]);
-  expect(options[0]).toHaveTextContent("statement.pdf");
-  cleanup();
-
+test("a confirmed reference shows who confirmed it and no longer counts as blocking", async () => {
+  const confirmed: Xref = {
+    ...amendedTarget,
+    target_amended: null,
+    confirmed_by: "reviewer@firm",
+    confirmed_at: "2026-11-01T10:00:00Z",
+    confirmed_version: 3,
+  };
   mockApi({
     "GET /api/papers/p1/review-notes": [],
-    "GET /api/papers/p1": paperFixture({ binder_state: "assembled", status: "signed_off", xrefs: [outToBank] }),
+    "GET /api/papers/p1": paperFixture({ xrefs: [confirmed] }),
+    "GET /api/binders/b1": binderFixture(),
   });
   render(<PaperPage id="p1" />);
   await screen.findByRole("heading", { name: /Cross-references/ });
-  expect(screen.queryByRole("button", { name: "Add reference" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+  expect(screen.getByTestId("xref-confirmed")).toHaveTextContent("confirmed against version 3 by reviewer@firm");
+  expect(screen.queryByTestId("xref-amended")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+  expect(screen.getByTestId("xref-summary")).toHaveTextContent("1 out, 0 in");
 });

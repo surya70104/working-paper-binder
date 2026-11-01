@@ -61,6 +61,13 @@ class StoreUnavailable(BinderError):
     status_code = 503
 
 
+class WorkMindUnavailable(BinderError):
+    """WorkMind cannot be reached, refused the call, or is not configured, so a run cannot be
+    verified as accepted (spec 3C; D37). Nothing is filed."""
+
+    status_code = 503
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(BinderError)
     async def _binder_error(request: Request, exc: BinderError) -> JSONResponse:

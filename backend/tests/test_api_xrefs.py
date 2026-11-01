@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import uuid
 import zipfile
 from typing import Any
 
@@ -135,18 +136,24 @@ def test_a_document_reference_breaks_when_the_document_leaves_the_binder(api: Te
     assert api.delete(f"/api/xrefs/{ref['id']}").status_code == 404
 
 
-def test_a_target_amended_after_the_reference_is_surfaced_but_never_blocks(
+def test_a_superseded_target_blocks_assembly_until_the_reference_is_confirmed(
     api: TestClient,
 ) -> None:
+    """Spec 3E: a reference pointing at a superseded paper is surfaced and blocks assembly
+    (D36). Papers are never deleted, so "superseded" is a target amended after the reference
+    was made; a person confirms the reference against the current version to clear it."""
     binder = create_binder(api, report_date="2026-09-30")
     cash = create_paper(api, binder["id"], ref="D-1", section="D", title="Cash")
     bank = create_paper(api, binder["id"], ref="D-2", section="D", title="Bank")
     full_chain(api, bank["id"])  # D-2 signed off at version 3
     [ref] = add(api, cash["id"], to_wp=bank["id"], direction="to")["xrefs"]
-    assert ref["target_amended"] is None
-
-    # A content change on the target, then a new prepared version: surfaced.
+    assert ref["target_amended"] is None and ref["confirmed_by"] is None
+    # Nothing to confirm while the target has not changed.
     act_as(api, PREPARER)
+    nothing = api.post(f"/api/xrefs/{ref['id']}/confirm")
+    assert nothing.status_code == 409 and "nothing to confirm" in nothing.json()["detail"]
+
+    # A content change on the target, then a new prepared version: surfaced, and it blocks.
     edited = api.patch(f"/api/papers/{bank['id']}", json={"result": "Reconciled to the cent"})
     assert edited.status_code == 200, edited.text
     step(api, bank["id"], "prepare")
@@ -154,8 +161,11 @@ def test_a_target_amended_after_the_reference_is_surfaced_but_never_blocks(
     assert ref["target_amended"] == (
         "paper D-2 has been amended since this reference was made (version 3 → 4)"
     )
-    assert ref["broken"] is None
-    assert ("broken_reference", "D-1") not in blockers(api, binder["id"])
+    assert ref["broken"] is None  # the target is present; it is superseded, not missing
+    found = [b for b in assembly_blockers(api, binder["id"]) if b["kind"] == "broken_reference"]
+    assert [b["ref"] for b in found] == ["D-1"]
+    assert "superseded: paper D-2 has been amended" in found[0]["detail"]
+    assert "confirm the reference against the current version, or remove it" in found[0]["detail"]
 
     # The target's own view of the same reference carries the note too, and a later
     # review or sign-off of the changed content does not alter it.
@@ -165,7 +175,35 @@ def test_a_target_amended_after_the_reference_is_surfaced_but_never_blocks(
     [seen] = xrefs_of(api, bank["id"])
     assert "version 3 → 5" in (seen["target_amended"] or "")
 
-    # A reference made to a paper that has not been prepared yet says so once it is.
+    # Confirming records who, when and which version, and clears the blocker.
+    act_as(api, REVIEWER)
+    confirmed = api.post(f"/api/xrefs/{ref['id']}/confirm")
+    assert confirmed.status_code == 200, confirmed.text
+    [ref] = [x for x in confirmed.json()["xrefs"] if x["id"] == ref["id"]]
+    assert ref["target_amended"] is None
+    assert ref["confirmed_by"] == REVIEWER and ref["confirmed_version"] == 5
+    assert ref["confirmed_at"] is not None
+    assert ("broken_reference", "D-1") not in blockers(api, binder["id"])
+
+    # A further change after the confirmation supersedes it again, naming the confirmed version.
+    act_as(api, PARTNER)
+    step(api, bank["id"], "sign-off")  # same content: no change
+    assert xrefs_of(api, cash["id"])[0]["target_amended"] is None
+    act_as(api, PREPARER)
+    api.patch(f"/api/papers/{bank['id']}", json={"result": "Reconciled again"}).raise_for_status()
+    step(api, bank["id"], "prepare")
+    [ref] = xrefs_of(api, cash["id"])
+    assert ref["target_amended"] == (
+        "paper D-2 has been amended since this reference was confirmed at version 5 (now version 7)"
+    )
+    assert ("broken_reference", "D-1") in blockers(api, binder["id"])
+
+    # Removing the reference clears the matter too, while the binder is open.
+    assert api.delete(f"/api/xrefs/{ref['id']}").status_code == 204
+    assert ("broken_reference", "D-1") not in blockers(api, binder["id"])
+
+    # A reference made to a paper that is still a draft has nothing to be superseded until the
+    # target's first prepared content changes: preparing it is not a change, amending it is.
     note = create_paper(api, binder["id"], ref="D-3", section="D", title="Notes")
     [fresh] = [
         x
@@ -176,9 +214,64 @@ def test_a_target_amended_after_the_reference_is_surfaced_but_never_blocks(
     act_as(api, PREPARER)
     step(api, note["id"], "prepare")
     fresh = next(x for x in xrefs_of(api, cash["id"]) if x["to_ref"] == "D-3")
+    assert fresh["target_amended"] is None
+    assert ("broken_reference", "D-1") not in blockers(api, binder["id"])
+    api.patch(f"/api/papers/{note['id']}", json={"result": "Noted"}).raise_for_status()
+    step(api, note["id"], "prepare")
+    fresh = next(x for x in xrefs_of(api, cash["id"]) if x["to_ref"] == "D-3")
     assert fresh["target_amended"] == (
-        "paper D-3 had no prepared version when this reference was made; it is now at version 1"
+        "paper D-3 has been amended since this reference was made (version 1 → 2)"
     )
+    assert ("broken_reference", "D-1") in blockers(api, binder["id"])
+    api.post(f"/api/xrefs/{fresh['id']}/confirm").raise_for_status()
+    assert ("broken_reference", "D-1") not in blockers(api, binder["id"])
+
+
+def test_only_a_paper_reference_can_be_confirmed_and_never_on_a_purged_binder(
+    api: TestClient,
+) -> None:
+    binder = create_binder(api, report_date="2026-09-30")
+    cash = create_paper(api, binder["id"], ref="D-1", section="D", title="Cash")
+    [line] = add(api, cash["id"], to_fs_line="BS.A.1", direction="to")["xrefs"]
+    refused = api.post(f"/api/xrefs/{line['id']}/confirm")
+    assert refused.status_code == 422
+    assert "only a reference to a paper can be confirmed" in refused.json()["detail"]
+    assert api.post(f"/api/xrefs/{uuid.uuid4()}/confirm").status_code == 404
+
+
+def test_a_superseded_target_after_assembly_blocks_reassembly_until_confirmed(
+    api: TestClient,
+) -> None:
+    """The amendment of a referenced paper after assembly (spec 3F) supersedes the references
+    to it; re-assembly waits for the confirmation, which is allowed on the assembled file."""
+    binder = complete_binder(api)
+    act_as(api, PREPARER)
+    cash = create_paper(api, binder["id"], ref="D-1", section="D", title="Cash")
+    bank = create_paper(api, binder["id"], ref="D-2", section="D", title="Bank")
+    [ref] = add(api, cash["id"], to_wp=bank["id"], direction="to")["xrefs"]
+    full_chain(api, cash["id"])
+    full_chain(api, bank["id"])
+    act_as(api, PARTNER)
+    assert api.post(f"/api/binders/{binder['id']}/assemble").status_code == 200
+    amended = api.patch(
+        f"/api/papers/{bank['id']}", json={"result": "Revised", "amendment_reason": "review"}
+    )
+    assert amended.status_code == 200, amended.text
+    act_as(api, PREPARER)
+    full_chain(api, bank["id"])
+    act_as(api, PARTNER)
+    kinds = {(b["kind"], b["ref"]) for b in assembly_blockers(api, binder["id"])}
+    assert ("broken_reference", "D-1") in kinds
+    # Removal is refused after assembly (spec 3F); confirmation is the way through.
+    assert api.delete(f"/api/xrefs/{ref['id']}").status_code == 409
+    assert api.post(f"/api/xrefs/{ref['id']}/confirm").status_code == 200
+    assert ("broken_reference", "D-1") not in blockers(api, binder["id"])
+    assert api.post(f"/api/binders/{binder['id']}/assemble").status_code == 200
+
+
+def assembly_blockers(api: TestClient, binder_id: str) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = api.get(f"/api/binders/{binder_id}/assembly").json()["blockers"]
+    return result
 
 
 def test_fs_line_references_are_reported_as_not_checked(api: TestClient) -> None:

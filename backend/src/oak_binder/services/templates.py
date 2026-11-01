@@ -140,9 +140,8 @@ class IndexTemplate:
             )
         if not self.areas:
             findings.append(
-                "no area map (areas): no Schedule III head is assigned to an area D-T, so no "
-                "lead schedule can be generated from the Financial Spine (TEMPLATE_AUTHORING "
-                "item 1)"
+                "no area map (areas): lead schedules use a default map derived from the Spine's "
+                "tree (D38) until the firm's map is entered (TEMPLATE_AUTHORING item 1)"
             )
         else:
             unmapped = [c for c in AREA_SECTIONS if c not in self.areas]

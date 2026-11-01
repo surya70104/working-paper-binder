@@ -62,6 +62,8 @@ const ready: SpinePapersStatus = {
   },
   map_problems: [],
   unassigned_heads: ["PL.R.1"],
+  map_source: "template",
+  beyond_letters: [],
 };
 
 test("the card shows every mapped area with its state, links to the papers, and the chain", async () => {
@@ -137,6 +139,8 @@ test("when lead schedules cannot be generated the reason is shown and nothing is
       reason: "no area map for template statutory: no Schedule III head is assigned to any area D-T, so no lead schedule can be generated (TEMPLATE_AUTHORING item 1)",
       areas: ready.areas.map((a) => area(a.code)),
       unassigned_heads: [],
+      map_source: "none",
+      beyond_letters: [],
     },
   });
   render(<SpinePapersCard binderId="b1" state="open" onChanged={async () => undefined} />);
@@ -185,4 +189,33 @@ test("an unlinked binder says so plainly", async () => {
   expect(screen.getByTestId("spine-chain-reason")).toHaveTextContent("not linked");
   expect(screen.getByRole("button", { name: "Generate adjustment chain" })).toBeDisabled();
   expect(screen.queryByRole("button", { name: /lead schedules/ })).not.toBeInTheDocument();
+});
+
+test("a map derived from the Spine's tree is said so, with the groups beyond the letters", async () => {
+  mockApi({
+    "GET /api/binders/b1/spine-papers": {
+      ...ready,
+      map_source: "derived",
+      beyond_letters: ["R.17", "R.18"],
+      areas: ready.areas.map((a) => (a.code === "D" ? { ...a, name: "Assets", listed_heads: ["BS.A"] } : a)),
+    },
+  });
+  render(<SpinePapersCard binderId="b1" state="open" onChanged={async () => undefined} />);
+  await screen.findByTestId("spine-papers-card");
+  expect(screen.getByTestId("spine-papers-derived")).toHaveTextContent("derived from the Spine's Schedule III tree (D38)");
+  expect(screen.getByTestId("spine-papers-derived")).toHaveTextContent("2 head group(s) had no letter D–T left: R.17, R.18");
+  expect(screen.getAllByTestId("spine-area")[0]).toHaveTextContent("D Assets");
+});
+
+test("the card refetches its status when the binder's Spine link changes", async () => {
+  const calls = mockApi({ "GET /api/binders/b1/spine-papers": SPINE_PAPERS_NONE });
+  const { rerender } = render(
+    <SpinePapersCard binderId="b1" state="open" onChanged={async () => undefined} refreshKey="//open" />,
+  );
+  await screen.findByTestId("spine-papers-card");
+  expect(calls.filter((c) => c.path === "/api/binders/b1/spine-papers")).toHaveLength(1);
+  rerender(
+    <SpinePapersCard binderId="b1" state="open" onChanged={async () => undefined} refreshKey="eng/ver/open" />,
+  );
+  await waitFor(() => expect(calls.filter((c) => c.path === "/api/binders/b1/spine-papers")).toHaveLength(2));
 });

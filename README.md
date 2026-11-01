@@ -52,6 +52,8 @@ Materiality, Sampling and the vault is Pass 2 work and will go through APIs only
 | 6 | Attachments, assembly with the lock and manifest, amendments, retention and purge, produce-file export, the Assembly screen | done; migration 0002 applied to `oak_binder_test`, suite green, assembly and production exercised in the browser |
 | 7 | Review notes: raised → assigned → responded → cleared; an open note blocks sign-off and assembly; the Review notes screen | done; migration 0003 applied to `oak_binder_test`, suite green |
 | 8 | Pass 1 completion: header-based authentication (`OAK_AUTH`), the post-assembly access log (spec §3H), cross-references with broken-reference blocking (spec §3E), completeness and purge-state fixes, draft-template warning | done; migrations 0004 and 0005 applied to `oak_binder_test`, suites green (D24–D26) |
+| 19 | Acceptance audit (D40): every clause of spec sections 2–8 proven by `tests/test_acceptance_spec.py` and the feature modules, every user workflow walked in the browser against the Spine and WorkMind doubles served over HTTP (`tests/local_stubs.py`, `scripts/dev_backend_with_doubles.ps1`), four screen defects fixed with tests, matrix in `docs/ACCEPTANCE_MATRIX.md` | done; no schema change |
+| 18 | Pass 2 completion work on the specification alone (D36–D39): a reference to a superseded (amended) paper blocks assembly until a person confirms it against the current version, recorded on the reference (migration 0010); WorkMind papers are filed only after the run is read back as accepted from a configured WorkMind, verified against a stated contract and a local double; a default area map derived from the Spine's tree makes lead schedules work when the template has none; readings and the live-versus-local status recorded | done; migration 0010 applied to `oak_binder_test` |
 | 17 | Post-Pass 2 follow-up (D35): the Binder screen prefills the index template's SA references into the new-paper form and saves them with the paper; the template loader refuses a generated reference (`<area>-L`, `W-ADJ`) required outside the section it is generated in, and the check command lists the generated papers a template requires; the review-level policy questions, the template content request and the Spine tree request written for the firm | done; no schema change |
 | 16 | Pass 2 Stage G: close-out. The archive gains `cross_reference_map.json`, screen 4's map built from the recorded references and the FS lines the assembly recorded, so it is the same whether or not the Spine answers; tests prove the full archive inventory (Pass 1 and Pass 2 members), the map's equality with the endpoint, and that the assembly blocker inventory is unchanged; stale documentation corrected; `docs/PASS2_COMPLETION_REPORT.md` | done; no schema change (D34) |
 | 15 | Pass 2 Stage F: review levels configurable per engagement (spec §3D): the preparer always first from the prepared version, the binder's levels in order each recorded with reviewer, time, level and version in append-only `wp_review`, the paper reviewed only after the last level, sign-off unchanged, the configuration frozen for good once any level review exists (service and database trigger), the whole chain in the archive | done; migration 0009 applied to `oak_binder_test` (D33) |
@@ -209,10 +211,10 @@ Interactive documentation is at <http://localhost:8001/docs> when the API runs.
 | `GET /api/spine/engagements/{id}`, `GET …/versions` | Read-through to the Spine for choosing a version (503 when no Spine is configured) |
 | `GET /api/binders/{id}/fs-lines` | The financial-statement lines a reference may name: the linked Spine version's presentation lines by `head_id`, or why there are none |
 | `GET /api/binders/{id}/xref-map` | Screen 4: FS line → lead schedule → working paper → source document, with broken and amended links flagged |
-| `POST /api/papers/{id}/xrefs`, `GET …/xrefs`, `DELETE /api/xrefs/{id}` | Cross-references (spec §3E): add one with exactly one target, list in and out with the check result, remove before assembly |
-| `POST /api/binders/{id}/generated-papers` | Generated-paper intake (spec §3C): a module delivers a complete paper with its inputs and citations; filed as a draft with its provenance (422 per-source rule, 409 reused run or assembled binder, 413 over the size cap, 501 WorkMind until the module exists) |
+| `POST /api/papers/{id}/xrefs`, `GET …/xrefs`, `DELETE /api/xrefs/{id}`, `POST /api/xrefs/{id}/confirm` | Cross-references (spec §3E): add one with exactly one target, list in and out with the check result, remove before assembly; confirm a reference whose target paper was amended since (a superseded target blocks assembly until confirmed or removed; D36) |
+| `POST /api/binders/{id}/generated-papers` | Generated-paper intake (spec §3C): a module delivers a complete paper with its inputs and citations; filed as a draft with its provenance (422 per-source rule, 409 reused run, assembled binder or a WorkMind run that is not accepted, 413 over the size cap, 404 a WorkMind run unknown to WorkMind, 503 no WorkMind configured or none answering; D37) |
 | `GET /api/papers/{id}/generation` | Where a generated paper came from (404 for a hand-made one); for a Spine paper, its `freshness` |
-| `GET /api/binders/{id}/spine-papers` | Stage E status: whether Spine papers can be generated and why not, the linked version, each area D–T with its lead schedule's state (`none`, `current`, `stale`, `not_checked`), the adjustment chain's state, area-map problems and unassigned heads |
+| `GET /api/binders/{id}/spine-papers` | Stage E status: whether Spine papers can be generated and why not, the linked version, each area D–T with its lead schedule's state (`none`, `current`, `stale`, `not_checked`), the adjustment chain's state, area-map problems and unassigned heads, and `map_source`: the template's map, one derived from the Spine's tree when the template has none (D38), or none |
 | `POST /api/binders/{id}/spine-papers/lead-schedules` | Generate lead schedules from the linked, locked Spine version: body `{"areas": ["D", …]}`, or `{"areas": null}` for every mapped area without one. Refusals follow the Binder's conventions: 409 when the binder is not open, not linked or its version is not locked, and for one paper per run, a reference in use or nothing left to generate; 503 when no Spine is configured or it cannot answer; 404 when the Spine no longer has the version; 422 for an area-map problem, an unmapped area or an unknown area code |
 | `POST /api/binders/{id}/spine-papers/adjustment-chain` | Generate the binder's one adjustment-chain paper `W-ADJ` in section W |
 | `POST /api/papers/{id}/regenerate` | Rebuild a Spine paper from the linked, locked version on an open binder: the Spine's fields rewritten, the person's kept, a new provenance row, only Binder-owned references moved; returns the paper with `regeneration.references` (409 once assembled, unlinked, on an unlocked version or on an unchanged version; 503 when the Spine cannot answer; 422 for a hand-made paper) |
@@ -352,6 +354,12 @@ hash and time. Tests: `tests\test_spine_client.py` (against a Spine double, no n
 `tests\test_api_spine_link.py`, `frontend\tests\SpineLinkCard.test.tsx`.
 
 ### Generated papers (Pass 2, Stage D)
+
+*Completion work (D37):* a WorkMind delivery is filed only after the Binder reads the run back from the
+configured WorkMind (`OAK_WORKMIND_URL`, optional `OAK_WORKMIND_CREDENTIAL`, GET
+`/api/runs/{run_id}`) and it reports `accepted`; the verification is recorded on the paper's
+provenance. No WorkMind is connected here: the contract is tested against the local double in
+`tests/fake_workmind.py`. Unconfigured, the delivery is refused with 503 and nothing is filed.
 
 Spec §3C: "A paper produced by a module arrives complete, with its inputs and its citations,
 and nobody retypes anything." `POST /api/binders/{id}/generated-papers` takes the paper's
@@ -581,6 +589,28 @@ firm uses is its decision (D24). Every response carries `Cache-Control: no-store
 `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. Production refuses
 `OAK_AUTH=dev`. Tests in `tests\test_identity.py`, `tests\test_security_headers.py` and
 `tests\test_config.py`.
+
+### Demonstration
+
+`docs/DEMONSTRATION_AND_STATUS.md` holds the demonstration sequence, the status report for the
+senior, the list of features implemented and the limitations to disclose; `docs/ACCEPTANCE_MATRIX.md`
+is the clause-by-clause acceptance against the specification.
+
+### Browser checks with the local doubles
+
+The Spine and WorkMind do not run here. For a browser walk-through, serve the test doubles over
+HTTP and point a development backend at them; the backend then uses `oak_binder_test` and the
+local attachment store, never the Drive vault (D40):
+
+```powershell
+backend\.venv\Scripts\python.exe -m tests.local_stubs --spine-port 8010 --workmind-port 8012
+powershell -NoProfile -File scripts\dev_backend_with_doubles.ps1
+```
+
+`.claude/launch.json` carries the same three servers (doubles, backend, frontend) for the
+desktop app's preview. The locked Spine version is `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` of
+engagement `11111111-1111-4111-8111-111111111111`; the accepted WorkMind run is
+`wm-run-example-7f3a`. Nothing served by the doubles is live data.
 
 ### Test database and browser-demo data
 

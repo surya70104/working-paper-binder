@@ -23,6 +23,7 @@ const spine: Generation = {
   received_at: "2026-10-31T12:00:01Z",
   content_hash_at_intake: "c".repeat(64),
   spine_figures_check: null,
+  run_verification: null,
   locked_fields: ["title", "section", "sa_refs", "population_sample", "result"],
   payload: {
     inputs: { version_id: V, area: "D" },
@@ -67,6 +68,10 @@ test("a current Spine paper shows the version it came from, the shape of what wa
   expect(screen.getByLabelText("Result", { exact: false })).toBeDisabled();
   expect(screen.getByLabelText("Objective")).toBeEnabled();
   expect(screen.getByLabelText("Procedure performed")).toBeEnabled();
+  expect(screen.getByTestId("locked-note")).toHaveTextContent(
+    "title, section, SA references, population and sample, result are locked",
+  );
+  expect(screen.getByTestId("locked-note")).toHaveTextContent("The objective, procedure and conclusion are written here");
 });
 
 test("a stale Spine paper on an open binder offers Regenerate and shows what happened to the references", async () => {

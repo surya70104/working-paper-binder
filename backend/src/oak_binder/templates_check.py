@@ -79,7 +79,32 @@ def report(template: IndexTemplate) -> list[str]:
 def area_report(template: IndexTemplate, tree: SpineTree | None) -> tuple[list[str], bool]:
     """The area-map lines and whether the map was refused against the tree."""
     if not template.areas:
-        return ["  area map: empty (no Schedule III head assigned to any area; D32)"], False
+        lines = ["  area map: empty (no Schedule III head assigned to any area; D32)"]
+        if tree is None:
+            lines.append(
+                "  a default map is derived from the Spine's tree at generation time (D38); give "
+                "--tree FILE or --spine to see it"
+            )
+            return lines, False
+        derived = area_map.derive(tree)
+        if not derived.areas:
+            lines.append("  derived map (D38): the tree has no heads to derive an area from")
+            return lines, False
+        lines.append(
+            "  derived map (D38): "
+            + ", ".join(
+                f"{code} <- {a.heads[0]} ({derived.names[code]})"
+                for code, a in sorted(derived.areas.items())
+            )
+        )
+        if derived.beyond_letters:
+            lines.append(
+                f"  head groups beyond the letters D-T ({len(derived.beyond_letters)}): "
+                + ", ".join(derived.beyond_letters)
+            )
+        result = area_map.check_areas(derived.areas, tree)
+        lines.extend(_tree_lines(result))
+        return lines, not result.ok
     listed = sum(len(a.heads) for a in template.areas.values())
     lines = [
         f"  area map: {len(template.areas)} area(s) listing {listed} head(s): "
@@ -89,8 +114,12 @@ def area_report(template: IndexTemplate, tree: SpineTree | None) -> tuple[list[s
         lines.append("  area map tree checks skipped: no tree given (--tree FILE or --spine)")
         return lines, False
     result = area_map.check(template, tree)
-    for problem in result.problems:
-        lines.append(f"  area map REFUSED: {problem}")
+    lines.extend(_tree_lines(result))
+    return lines, not result.ok
+
+
+def _tree_lines(result: area_map.AreaMapCheck) -> list[str]:
+    lines = [f"  area map REFUSED: {problem}" for problem in result.problems]
     for code, covered in sorted(result.coverage.items()):
         lines.append(f"  area {code} covers {len(covered)} head(s) after expansion")
     if result.unassigned:
@@ -102,7 +131,7 @@ def area_report(template: IndexTemplate, tree: SpineTree | None) -> tuple[list[s
         lines.append("  every mappable head is in an area")
     if result.orphans:
         lines.append(f"  served heads whose parent is not served: {', '.join(result.orphans)}")
-    return lines, not result.ok
+    return lines
 
 
 def load_tree(path: Path) -> SpineTree:

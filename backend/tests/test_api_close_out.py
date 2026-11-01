@@ -22,7 +22,15 @@ from oak_binder.services import spine_papers
 from oak_binder.services.templates import TEMPLATES_DIR, parse_template
 from tests.conftest import PREPARER, act_as, use_spine
 from tests.fake_spine import ENGAGEMENT_ID, LOCKED_VERSION_ID, FakeSpine
-from tests.helpers import PARTNER, PDF, complete_binder, create_paper, step, upload
+from tests.helpers import (
+    PARTNER,
+    PDF,
+    complete_binder,
+    create_paper,
+    generated_fixture,
+    step,
+    upload,
+)
 
 pytestmark = pytest.mark.db
 
@@ -120,11 +128,7 @@ def complete_pass_2_binder(api: TestClient, monkeypatch: pytest.MonkeyPatch) -> 
         f"/api/papers/{cash['id']}/xrefs",
         json={"to_vault_doc": doc["vault_doc_id"], "direction": "to"},
     ).raise_for_status()
-    fixture = json.loads(
-        (Path(__file__).parent / "fixtures" / "generated" / "sampling.json").read_text(
-            encoding="utf-8"
-        )
-    )
+    fixture = generated_fixture("sampling")
     sampling = api.post(f"/api/binders/{bid}/generated-papers", json=fixture).json()
     for paper in (lead, chain, cash, sampling):
         if paper["conclusion"] is None:

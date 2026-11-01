@@ -107,3 +107,23 @@ def test_the_check_command_checks_a_map_against_a_saved_tree(
     assert "area map REFUSED: area E: heads ['BS.A.9'] are not heads" in out
     assert "area map REFUSED: areas D and E both cover heads" in out
     assert "0 of 1 file(s) load" in out
+
+
+def test_the_check_command_shows_the_map_derived_from_a_saved_tree_for_an_unmapped_file(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tree = tmp_path / "tree.json"
+    tree.write_text(json.dumps(tree_record()), encoding="utf-8")
+    code = templates_check.main(["--tree", str(tree), str(TEMPLATES_DIR / "statutory.json")])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "area map: empty" in out
+    assert (
+        "derived map (D38): D <- BS.A (Assets), E <- BS.L (Liabilities), F <- PL.R (Revenue), "
+        "G <- PL.E (Expenses)" in out
+    )
+    assert "area D covers 5 head(s) after expansion" in out
+    assert "every mappable head is in an area" in out
+    code = templates_check.main([str(TEMPLATES_DIR / "statutory.json")])
+    assert code == 0
+    assert "derived from the Spine's tree at generation time (D38)" in capsys.readouterr().out

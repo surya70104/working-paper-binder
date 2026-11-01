@@ -41,6 +41,8 @@ export type Generation = {
   received_at: string;
   content_hash_at_intake: string;
   spine_figures_check: "verified" | "not_checked" | null;
+  // D37: how the delivery's run was verified at intake (the WorkMind run read back), or null.
+  run_verification: Record<string, unknown> | null;
   locked_fields: string[];
   payload: Record<string, unknown>;
   // Stage E (D32): for a paper the Financial Spine produced, whether it still matches the
@@ -91,6 +93,9 @@ export type SpinePapersStatus = {
   chain: SpineChainStatus;
   map_problems: string[];
   unassigned_heads: string[];
+  // D38: the template's own map, one derived from the Spine's tree, or none.
+  map_source: "template" | "derived" | "none";
+  beyond_letters: string[];
 };
 export type ReferenceChanges = { added: string[]; removed: string[]; kept: string[]; for_review: string[] };
 export type RegeneratedPaper = Paper & {
@@ -149,8 +154,12 @@ export type Xref = {
   created_at: string;
   broken: string | null;
   checked: boolean;
-  // Information only: the target paper's content changed since the reference was made.
+  // Spec 3E "superseded" (D36): the target paper's content changed since the reference was
+  // made or last confirmed; blocks assembly until confirmed or removed.
   target_amended: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  confirmed_version: number | null;
 };
 
 export type FsLine = {
@@ -505,6 +514,7 @@ export const api = {
   removeAttachment: (id: string) => request<null>("DELETE", `/api/attachments/${id}`),
   addXref: (paperId: string, body: XrefCreate) => request<Paper>("POST", `/api/papers/${paperId}/xrefs`, body),
   removeXref: (id: string) => request<null>("DELETE", `/api/xrefs/${id}`),
+  confirmXref: (id: string) => request<Paper>("POST", `/api/xrefs/${id}/confirm`),
   getFsLines: (binderId: string) => request<FsLines>("GET", `/api/binders/${binderId}/fs-lines`),
   getXrefMap: (binderId: string) => request<XrefMap>("GET", `/api/binders/${binderId}/xref-map`),
   listDiscussions: (binderId: string) => request<Discussion[]>("GET", `/api/binders/${binderId}/discussions`),

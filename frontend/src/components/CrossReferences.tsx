@@ -58,10 +58,12 @@ function Row({
   canEdit,
   busy,
   run,
+  canConfirm,
 }: {
   x: Xref;
   paperId: string;
   canEdit: boolean;
+  canConfirm: boolean;
   busy: boolean;
   run: (action: () => Promise<unknown>) => Promise<boolean>;
 }) {
@@ -77,8 +79,13 @@ function Row({
       <span>
         {left} {arrow} {right}
         {x.target_amended ? (
-          <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-900" data-testid="xref-amended">
-            {x.target_amended}
+          <span className="ml-2 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-800" data-testid="xref-amended">
+            superseded: {x.target_amended}
+          </span>
+        ) : null}
+        {x.confirmed_by && !x.target_amended ? (
+          <span className="ml-2 text-xs text-slate-500" data-testid="xref-confirmed">
+            confirmed against version {x.confirmed_version} by {x.confirmed_by} {x.confirmed_at}
           </span>
         ) : null}
         {x.broken ? (
@@ -94,16 +101,29 @@ function Row({
           {x.created_by} {x.created_at}
         </span>
       </span>
-      {canEdit && writtenHere && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void run(() => api.removeXref(x.id))}
-          className="text-xs underline disabled:opacity-50"
-        >
-          Remove
-        </button>
-      )}
+      <span className="flex gap-3">
+        {canConfirm && x.target_amended && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run(() => api.confirmXref(x.id))}
+            className="text-xs underline disabled:opacity-50"
+            title="Record that this reference still holds against the target's current version"
+          >
+            Confirm
+          </button>
+        )}
+        {canEdit && writtenHere && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void run(() => api.removeXref(x.id))}
+            className="text-xs underline disabled:opacity-50"
+          >
+            Remove
+          </button>
+        )}
+      </span>
     </li>
   );
 }
@@ -116,6 +136,7 @@ export function CrossReferences({
   busy,
   run,
   canEdit,
+  canConfirm,
 }: {
   paperId: string;
   binderId: string;
@@ -124,6 +145,8 @@ export function CrossReferences({
   busy: boolean;
   run: (action: () => Promise<unknown>) => Promise<boolean>;
   canEdit: boolean;
+  // Confirming a superseded reference is allowed on an open or assembled binder (D36).
+  canConfirm: boolean;
 }) {
   const [kind, setKind] = useState<TargetKind>("paper");
   const [direction, setDirection] = useState<"to" | "from">("to");
@@ -136,7 +159,8 @@ export function CrossReferences({
 
   const out = xrefs.filter((x) => x.outgoing);
   const inbound = xrefs.filter((x) => !x.outgoing);
-  const broken = xrefs.filter((x) => x.broken).length;
+  // A superseded target blocks assembly like a missing one (spec 3E; D36).
+  const broken = xrefs.filter((x) => x.broken || x.target_amended).length;
 
   // The binder's papers are fetched once, when the paper picker is first shown.
   useEffect(() => {
@@ -205,7 +229,7 @@ export function CrossReferences({
       ) : (
         <ul className="mt-1 divide-y divide-slate-100 rounded border border-slate-200 bg-white text-sm">
           {rows.map((x) => (
-            <Row key={x.id} x={x} paperId={paperId} canEdit={canEdit} busy={busy} run={run} />
+            <Row key={x.id} x={x} paperId={paperId} canEdit={canEdit} canConfirm={canConfirm} busy={busy} run={run} />
           ))}
         </ul>
       )}
@@ -223,7 +247,8 @@ export function CrossReferences({
       <p className="text-xs text-slate-500">
         Where this paper's figures come from and go to: other papers, financial-statement lines,
         source documents. A reference to a paper or document is checked; one to an FS line is
-        not, since the Spine is not part of this product.
+        checked against the linked Spine version's lines once the binder is linked, and listed
+        as not checked until then. A superseded paper target blocks assembly until confirmed.
       </p>
       {list("Out — this paper refers to", out, "No outgoing references.")}
       {list("In — refers to this paper", inbound, "Nothing refers to this paper.")}

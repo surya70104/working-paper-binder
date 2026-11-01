@@ -55,7 +55,7 @@ blocks are strict: a key the contract does not name is refused.
 | `materiality` | `materiality` | `benchmark`, `band`, `spine_figures.version_id` (UUID), `spine_figures.figures` — each present and non-empty | `version_id` must be the binder's linked Spine version; refused otherwise. Unlinked binder: kept and marked `not_checked` |
 | `sampling` | `sampling` | `formula` (text), `seed` (integer or text) | both must appear **verbatim in the paper's text** (title, objective, procedure, population and sample, result or conclusion): the spec says "printed on it" |
 | `analytical_review` | `analytical_review` | `periods.current`, `periods.prior` (different), `thresholds` (non-empty) | — |
-| `workmind` | `workmind` | `run_id` on the block above, `source_row_citations[]` each with `source` and `row` (optional `detail`); **no `conclusion`** (spec §7) | validated in full, then **refused with 501** until WorkMind exists and an accepted run can be verified |
+| `workmind` | `workmind` | `run_id` on the block above, `source_row_citations[]` each with `source` and `row` (optional `detail`); **no `conclusion`** (spec §7) | validated in full, then the run is **read back from the configured WorkMind** (`GET /api/runs/{run_id}`, D37): filed only when its status is `accepted`; 409 for any other status, 404 for an unknown run, 503 when no WorkMind is configured or it cannot answer. The verification (status, who accepted, when, when checked) is recorded in the paper's provenance |
 | `spine` | — | — | refused (422): Spine-produced papers (lead schedules, the adjustment chain) are built by the Binder's own Spine-papers action from the linked, locked version (Stage E, D32), never delivered through this endpoint |
 
 Materiality, Sampling and Analytical Review may deliver a `conclusion`; a person may rewrite
@@ -84,8 +84,26 @@ it. WorkMind may not.
 |---|---|
 | 401 | the intake credential is missing or wrong |
 | 403 | under header auth, the identity is not in `OAK_INTAKE_IDENTITIES` (or none are listed) |
-| 404 | no such binder |
-| 409 | the binder is assembled; the paper reference is already used; the run id was already received for that source |
+| 404 | no such binder; a WorkMind run WorkMind does not know |
+| 409 | the binder is assembled; the paper reference is already used; the run id was already received for that source; a WorkMind run whose status is not `accepted` |
 | 413 | the `generated` block is over the size cap |
 | 422 | a required field is missing or empty, a block does not match the source, an unknown key, formula or seed not printed on the paper, Spine figures from another version, a WorkMind conclusion |
-| 501 | a valid WorkMind delivery, until the module exists |
+| 503 | a WorkMind delivery when no WorkMind is configured (`OAK_WORKMIND_URL`), or WorkMind cannot be reached, times out, answers badly or refuses the Binder's credential; nothing is filed |
+
+## WorkMind run read-back (D37)
+
+Before a WorkMind paper is filed, the Binder reads the run from the configured WorkMind, read-only:
+
+```
+GET {OAK_WORKMIND_URL}/api/runs/{run_id}
+Authorization: Bearer {OAK_WORKMIND_CREDENTIAL}      (only when set)
+
+200 {"run_id": "…", "status": "accepted", "accepted_by": "…", "accepted_at": "<ISO 8601>"}
+```
+
+`status` is required; `accepted_by` and `accepted_at` may be null for a run that is not
+accepted; other fields are ignored. This is the Binder's statement of the contract a WorkMind
+must serve (the module does not exist yet); `backend/tests/fake_workmind.py` is the local
+double the intake is tested against, with accepted, proposed and refused runs and the usual
+failure switches. A live WorkMind has not been connected; `OAK_WORKMIND_URL` is unset in
+development.

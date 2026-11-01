@@ -4,6 +4,10 @@
 
 ## Cover note
 
+**Status (1 November 2026, D38–D39): optional input.** The Binder now generates lead schedules
+without this form, from an area map derived from the Spine's tree, and runs with the
+placeholders described below. Answers refine those defaults; nothing waits for them.
+
 This request comes from the Working Paper Binder project at `D:\WORKING PAPER BINDER`. It is not written on behalf of the firm or any engagement partner, and it asks for no decision beyond what the project's own specification leaves open.
 
 The Binder ships four index templates, one per engagement type the specification names: statutory audit, tax audit, bank branch audit, internal audit. Each file today holds exactly what the specification fixes and nothing more, and each is marked draft. The software that reads, checks and uses the templates is complete and tested. What is missing is content only the firm can approve: the names of the financial statement areas, the working papers required in them, the Schedule III heads each area covers, the standards each paper cites, and confirmation of five paper titles the project derived from the specification's section names.

@@ -43,9 +43,9 @@ from oak_binder.services.spine_client import SpineClient, SpineVersion
 MANIFEST_VERSION = 1
 
 # Spec 3F names four blockers. Three are checked in full; broken cross-references are
-# checked for paper and document targets (D26) and cannot be checked for Spine lines, since
-# the Spine is not part of this product (D21). What is not checked is reported, never counted
-# as clear.
+# checked for paper and document targets (D26) and cannot be checked for Spine lines while
+# the binder is not linked to a Spine version (D29, D30). What is not checked is reported,
+# never counted as clear.
 NOT_CHECKED: tuple[str, ...] = (
     "cross-references to FS lines: the binder is not linked to a Financial Spine version "
     "(D29, D30), so a reference to an FS line cannot be followed; references to papers and "

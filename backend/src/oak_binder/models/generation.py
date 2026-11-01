@@ -79,6 +79,10 @@ class WpGeneration(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     content_hash_at_intake: Mapped[str] = mapped_column(Text, nullable=False)
     spine_figures: Mapped[str | None] = mapped_column(Text)
+    # Completion work (D37, migration 0010): how the delivery's run was verified at intake (the
+    # WorkMind run read back: status, who accepted it, when, the endpoint read); None when
+    # the source needs no read-back.
+    run_verification: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     __table_args__ = (
         CheckConstraint(f"source IN ({sql_list(SOURCES)})", name="ck_wp_generation_source"),

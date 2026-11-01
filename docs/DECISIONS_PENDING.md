@@ -5,12 +5,17 @@ built and verified. These are the points the specification leaves to people. Eac
 decides, what the Binder does meanwhile, and where the detail is. Nothing here is implemented
 as if decided; items 13–28 record the readings Pass 2 took when no decision was available.
 
+**Pass 2 completion work, 1 November 2026 (D39):** no input from any person is expected. Every item below
+that blocked a feature has been closed by a conservative technical decision on the
+specification alone (items 5, 13 and the lead-schedule side of 1–2; D36–D38). What remains
+here is optional: answers would refine defaults the Binder now works without.
+
 ## Chartered accountant
 
 | # | Decision | Meanwhile | Detail |
 |---|---|---|---|
-| 1 | Names for financial statement areas D–T, per engagement type | Generic names; templates marked draft; Binders screen warns | `docs\TEMPLATE_AUTHORING.md` |
-| 2 | Required papers per engagement type, including a lead schedule per used area | Six required papers, one per spec-named section | same |
+| 1 | Names for financial statement areas D–T, per engagement type | Generic section names; templates marked draft; Binders screen warns. *Lead schedules carry the Spine's head labels through the derived area map (D38)* | `docs\TEMPLATE_AUTHORING.md` |
+| 2 | Required papers per engagement type, including a lead schedule per used area | Six required papers, one per spec-named section. *Lead schedules generate per derived area without being required (D38); a template may require `<area>-L`* | same |
 | 3 | The five derived titles (A-1, B-1, W-1, X-1, Z-1); only "Materiality memo" is the spec's wording | Used as placeholders | same |
 | 4 | SA references on required papers | None seeded; field available on every paper | `docs\SA_REFERENCES_FOR_CA_REVIEW.md` |
 
@@ -18,7 +23,7 @@ as if decided; items 13–28 record the readings Pass 2 took when no decision wa
 
 | # | Decision | Meanwhile | Detail |
 |---|---|---|---|
-| 5 | "Superseded paper" (spec §3E): is it a target paper amended after the reference was made, and should it block assembly or only warn? | Surfaced as information on the reference and in the archive; never blocks | D26 addendum in `docs\architecture.md` |
+| 5 | "Superseded paper" (spec §3E) | **Decided (D36, 1 Nov 2026):** a target amended after the reference was made is superseded; it blocks assembly as a broken reference until a person confirms the reference against the current version, recorded with who, when and which version | D36 in `docs\architecture.md` |
 | 6 | Cross-reference `direction` read as `to` / `from` (this paper refers to the target / the target refers to this paper) | In use; both directions clickable | D26 |
 | 7 | Access log reading of "opened": any read of an assembled or purged file's content, identity required, binder list not logged | In use | D25 |
 
@@ -44,11 +49,21 @@ are in `docs\REVIEW_LEVEL_POLICY_REQUEST.md`. Nothing is built on an assumed ans
 | 30 | Whether the preparer may review their own paper, and whether one person may record several levels on one version | no rule | questions 3–4 |
 | 31 | EQR independence, sign-off identity, refusal versus flag, freezing of role lists, differences by engagement type | no rule | questions 5–9 |
 
+## Pass 2 completion work (1 November 2026) — decisions taken on the specification alone (D36–D39)
+
+| # | Decision | Reason | Built as |
+|---|---|---|---|
+| 32 | A superseded paper target blocks assembly until confirmed | spec §3E says it blocks; papers are never deleted, so superseded means amended | `broken_reference` blocker; `POST /api/xrefs/{id}/confirm`; migration 0010 (D36) |
+| 33 | A reference made to a draft paper takes the target's first version as its baseline | preparing a referenced draft is not a change to what was referenced | no blocker until the first prepared content changes (D36) |
+| 34 | WorkMind papers are filed only after the run is read back as accepted; 503 without a WorkMind | spec §3C "one paper per accepted run"; only WorkMind knows | `services/workmind_client.py`, local double, migration 0010 (D37) |
+| 35 | A default area map is derived from the Spine's tree when the template has none: each root's children, in served order, as areas D–T, named by the Spine's labels | spec §3A's lead schedule per area must work without a firm map; the tree is the only non-invented grouping | `area_map.derive`, `map_source` on the status, provenance `area_map_source` (D38) |
+| 36 | Objective, procedure and result are not made mandatory at sign-off; only the conclusion is | spec §8.1 names only the conclusion; Spine papers arrive with those fields for the preparer | unchanged workflow, reading recorded (D39) |
+
 ## Pass 2 Stage D (generated papers, D31)
 
 | # | Decision | Meanwhile | Detail |
 |---|---|---|---|
-| 13 | WorkMind: how an *accepted run* is verified once the module exists (a read-back like the Spine client's) | WorkMind deliveries are validated against the contract and refused (501) | `docs\PASS2_STAGE_D_PLAN.md` §11 decision 6; `docs\GENERATED_PAPER_INTAKE.md` |
+| 13 | WorkMind: how an *accepted run* is verified | **Decided (D37, 1 Nov 2026):** read back from the configured WorkMind (`GET /api/runs/{run_id}`); filed only when `accepted`; 503 without a WorkMind; tested against the local double, no live WorkMind exists | D37; `docs\GENERATED_PAPER_INTAKE.md` |
 | 14 | Service identities for the modules (`OAK_INTAKE_IDENTITIES`) and whether an intake credential is used | No intake under header auth until identities are listed | README "Generated papers" |
 
 ## Pass 2 Stage E (Spine-produced papers, D32) — assumptions taken without further input

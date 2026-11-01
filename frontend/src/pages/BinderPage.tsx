@@ -200,7 +200,12 @@ export function BinderPage({ id }: { id: string }) {
 
       <SpineLinkCard binderId={id} state={binder.state} onChanged={load} />
 
-      <SpinePapersCard binderId={id} state={binder.state} onChanged={load} />
+      <SpinePapersCard
+        binderId={id}
+        state={binder.state}
+        onChanged={load}
+        refreshKey={`${binder.spine_engagement_id ?? ""}/${binder.spine_version_id ?? ""}/${binder.state}`}
+      />
 
       <ReviewLevelsCard binder={binder} onChanged={load} />
 

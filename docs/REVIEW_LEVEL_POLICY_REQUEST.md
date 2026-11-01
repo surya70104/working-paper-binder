@@ -4,6 +4,10 @@
 
 ## Cover note
 
+**Status (1 November 2026, D39): optional input.** The specification states no rule on who may
+review at which level, so the Binder records and does not enforce; this stands unless the firm
+answers below. Nothing waits for an answer.
+
 This request comes from the Working Paper Binder project at `D:\WORKING PAPER BINDER`. It is not written on behalf of the firm or any engagement partner. It asks the firm to decide a policy the specification leaves open; nothing has been built on an assumed answer.
 
 ## What exists today

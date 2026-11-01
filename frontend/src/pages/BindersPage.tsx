@@ -95,7 +95,9 @@ export function BindersPage() {
                 className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
                 data-testid="template-draft"
               >
-                <p className="font-medium">This index template is a draft: {chosen.status}</p>
+                <p className="font-medium">
+                  This index template is a draft: {chosen.status.replace(/^draft:?\s*/i, "")}
+                </p>
                 <ul className="mt-1 list-disc pl-4">
                   {chosen.placeholders.map((p) => (
                     <li key={p}>{p}</li>

@@ -3,6 +3,10 @@ assemblable file."""
 
 from __future__ import annotations
 
+import copy
+import json
+import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -23,8 +27,20 @@ PAPER: dict[str, Any] = {
     "conclusion": "Cash is fairly stated",
 }
 
-PDF = b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n"
-CSV = b"invoice,date,amount\nINV-001,2026-03-31,100000\nINV-002,2026-03-30,250000\n"
+# The test database is shared with browser demos and preserved (README "Test database and
+# browser-demo data"), and identical bytes are one document across binders (D17), so the
+# evidence bytes carry a per-session trailer: no demo row can be the document a test expects
+# to create. Module run ids get the same treatment (generated_fixture): one paper per run holds
+# across every binder (D31).
+SESSION = uuid.uuid4().hex[:12]
+PDF = (
+    b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n"
+    + f"%% test session {SESSION}\n".encode()
+)
+CSV = (
+    b"invoice,date,amount\nINV-001,2026-03-31,100000\nINV-002,2026-03-30,250000\n"
+    + f"# test session {SESSION}\n".encode()
+)
 
 
 def create_binder(api: TestClient, **extra: Any) -> dict[str, Any]:
@@ -108,3 +124,19 @@ def complete_binder(api: TestClient, report_date: str = "2026-09-30") -> dict[st
         full_chain(api, paper["id"])
     result: dict[str, Any] = api.get(f"/api/binders/{binder['id']}").json()
     return result
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "generated"
+
+
+def generated_fixture(source: str) -> dict[str, Any]:
+    """A module delivery from tests/fixtures/generated, its run id made unique to this call:
+    one paper per run holds across every binder in the shared test database (D31), so the
+    fixture's own id may already be filed by a demo. The WorkMind double recognises the
+    fixture's run id as a prefix."""
+    data: dict[str, Any] = json.loads((FIXTURES / f"{source}.json").read_text(encoding="utf-8"))
+    data = copy.deepcopy(data)
+    run_id = data["generated"].get("run_id")
+    if run_id:
+        data["generated"]["run_id"] = f"{run_id}-{uuid.uuid4().hex[:8]}"
+    return data

@@ -14,7 +14,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Text, Uuid, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from oak_binder.db import Base
@@ -49,6 +49,13 @@ class Xref(Base):
     direction: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Completion work (D36, migration 0010): spec 3E makes a reference to a superseded paper
+    # a blocker.
+    # A paper target amended after the reference was made blocks until a person confirms the
+    # reference against the target's current version; who, when and which version are kept.
+    confirmed_by: Mapped[str | None] = mapped_column(Text)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_version: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (
         CheckConstraint(ONE_TARGET_SQL, name="ck_xref_one_target"),
@@ -62,4 +69,10 @@ class Xref(Base):
         ),
         CheckConstraint("direction IN ('to', 'from')", name="ck_xref_direction"),
         CheckConstraint("btrim(created_by) <> ''", name="ck_xref_created_by_not_blank"),
+        CheckConstraint(
+            "(confirmed_by IS NULL AND confirmed_at IS NULL AND confirmed_version IS NULL) OR "
+            "(confirmed_by IS NOT NULL AND btrim(confirmed_by) <> '' AND confirmed_at IS NOT NULL "
+            "AND confirmed_version IS NOT NULL AND confirmed_version >= 1)",
+            name="ck_xref_confirmation_complete",
+        ),
     )

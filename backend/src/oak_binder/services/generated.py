@@ -36,13 +36,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from oak_binder.errors import Conflict, Invalid, NotAvailable, TooLarge
+from oak_binder.errors import Conflict, Invalid, TooLarge, WorkMindUnavailable
 from oak_binder.hashing import canonical_json, content_hash
 from oak_binder.models import Binder, Wp, WpGeneration, WpStatus
 from oak_binder.models.generation import locked_fields_for
 from oak_binder.schemas.generated import GeneratedPaperIn
 from oak_binder.services import papers as paper_service
 from oak_binder.services.binders import require_open
+from oak_binder.services.workmind_client import WorkMindClient
 
 
 def locked_hash(paper: Wp, source: str) -> str:
@@ -116,9 +117,11 @@ def receive(
     now: datetime,
     max_bytes: int,
     allow_spine: bool = False,
+    workmind: WorkMindClient | None = None,
 ) -> Wp:
     """Validate the delivery for its source, write the draft paper and its provenance row.
-    Raises Invalid (422), Conflict (409), TooLarge (413) or NotAvailable (501).
+    Raises Invalid (422), Conflict (409), TooLarge (413), NotFound (404, an unknown WorkMind
+    run) or WorkMindUnavailable (503, no WorkMind configured or none answering).
 
     ``allow_spine`` is set only by ``services.spine_papers``, which builds a Spine paper from
     the linked version itself (Stage E, D32); the HTTP intake never sets it."""
@@ -139,17 +142,35 @@ def receive(
             "Spine-produced papers (lead schedules, the adjustment chain) arrive through the "
             "Binder's own Spine-papers action, not this endpoint (Stage E, D32)"
         )
+    run_verification: dict[str, Any] | None = None
     if generated.source == "workmind":
         if payload.paper.conclusion is not None:
             raise Invalid(
                 "a WorkMind paper arrives without a conclusion: conclusions are not drafted "
                 "automatically (spec 7); a person writes it"
             )
-        raise NotAvailable(
-            "WorkMind intake is not available yet: the module does not exist and an accepted "
-            "run cannot be verified (decision 6, D31). The delivery itself is valid under the "
-            "contract."
-        )
+        # Spec 3C: "one paper per accepted run". Only WorkMind knows whether a run is accepted,
+        # so the run is read back from the configured WorkMind before anything is filed (D37).
+        run_id = generated.run_id or ""
+        if workmind is None:
+            raise WorkMindUnavailable(
+                f"no WorkMind is configured (OAK_WORKMIND_URL), so run {run_id!r} cannot be "
+                "verified as accepted and the paper is not filed (spec 3C)"
+            )
+        run = workmind.run(run_id)
+        if not run.accepted:
+            raise Conflict(
+                f"WorkMind run {run_id!r} is {run.status!r}, not accepted: only accepted runs "
+                "become papers (spec 3C)"
+            )
+        run_verification = {
+            "module": "workmind",
+            "endpoint": run.endpoint,
+            "status": run.status,
+            "accepted_by": run.accepted_by,
+            "accepted_at": run.accepted_at,
+            "checked_at": now.isoformat(),
+        }
     spine_check: str | None = None
     if generated.source == "materiality":
         spine_check = _check_materiality(payload, binder)
@@ -170,6 +191,7 @@ def receive(
         payload=block,
         content_hash_at_intake=locked_hash(paper, generated.source),
         spine_figures=spine_check,
+        run_verification=run_verification,
     )
     session.add(row)
     session.flush()

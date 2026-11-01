@@ -44,10 +44,14 @@ export function SpinePapersCard({
   binderId,
   state,
   onChanged,
+  refreshKey = "",
 }: {
   binderId: string;
   state: BinderState;
   onChanged: () => Promise<void>;
+  // Changes when the binder's Spine link or state changes, so the card refetches its status
+  // (the link is saved by another card on the same screen).
+  refreshKey?: string;
 }) {
   const [status, setStatus] = useState<SpinePapersStatus | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
@@ -62,7 +66,7 @@ export function SpinePapersCard({
       .getSpinePapers(binderId)
       .then(setStatus)
       .catch((e: Error) => setReadError(e.message));
-  }, [binderId]);
+  }, [binderId, refreshKey]);
 
   if (readError) {
     return (
@@ -106,6 +110,20 @@ export function SpinePapersCard({
           Lead schedules cannot be generated: {status.reason}
         </p>
       )}
+      {status.map_source === "derived" && (
+        <p className="mt-2 text-xs text-slate-600" data-testid="spine-papers-derived">
+          This template has no area map, so the areas are derived from the Spine&apos;s Schedule III
+          tree (D38): one area per statement-level head group, named as the Spine names it. A map
+          entered in the template replaces this.
+          {status.beyond_letters.length > 0 && (
+            <>
+              {" "}
+              {status.beyond_letters.length} head group(s) had no letter D–T left:{" "}
+              {status.beyond_letters.join(", ")}.
+            </>
+          )}
+        </p>
+      )}
       {status.map_problems.length > 0 && (
         <ul className="mt-2 list-disc pl-5 text-sm text-red-800" data-testid="spine-papers-problems">
           {status.map_problems.map((p) => (
@@ -122,8 +140,8 @@ export function SpinePapersCard({
       <h3 className="mt-3 font-medium">Lead schedules by area</h3>
       {shown.length === 0 ? (
         <p className="mt-1 text-sm text-slate-500" data-testid="spine-papers-no-areas">
-          No area has Schedule III heads in this template&apos;s area map, so no lead schedule can be
-          generated (TEMPLATE_AUTHORING item 1).
+          No area has Schedule III heads: the template has no area map and nothing could be derived
+          from the Spine&apos;s tree (D38), so no lead schedule can be generated (TEMPLATE_AUTHORING item 1).
         </p>
       ) : (
         <ul className="mt-1 divide-y divide-slate-100 text-sm">

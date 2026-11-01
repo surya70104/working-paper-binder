@@ -24,6 +24,7 @@ const sampling: Generation = {
   received_at: "2026-10-31T10:16:02Z",
   content_hash_at_intake: "a".repeat(64),
   spine_figures_check: null,
+  run_verification: null,
   locked_fields: LOCKED,
   freshness: null,
   payload: {
@@ -79,6 +80,7 @@ test("a materiality memo says whether its Spine figures were verified against th
     module: "oak_materiality",
     run_id: null,
     spine_figures_check: "verified",
+    run_verification: null,
     payload: {
       inputs: { benchmark_head_id: "PL.R.1" },
       citations: [{ source: "Financial Spine", head_id: "PL.R.1" }],

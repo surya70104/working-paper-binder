@@ -22,9 +22,18 @@ from fastapi.testclient import TestClient
 
 from oak_binder.config import Settings
 from oak_binder.hashing import content_hash
-from tests.conftest import PREPARER, REVIEWER, act_as, use_spine
+from tests.conftest import PREPARER, REVIEWER, act_as, use_spine, use_workmind
 from tests.fake_spine import ENGAGEMENT_ID, LOCKED_VERSION_ID, OPEN_VERSION_ID
-from tests.helpers import PARTNER, complete_binder, create_binder, full_chain, step
+from tests.fake_workmind import PROPOSED_RUN, REFUSED_RUN
+from tests.fake_workmind import TOKEN as WORKMIND_TOKEN
+from tests.helpers import (
+    PARTNER,
+    complete_binder,
+    create_binder,
+    full_chain,
+    generated_fixture,
+    step,
+)
 
 pytestmark = pytest.mark.db
 
@@ -32,8 +41,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "generated"
 
 
 def fixture(source: str) -> dict[str, Any]:
-    data: dict[str, Any] = json.loads((FIXTURES / f"{source}.json").read_text(encoding="utf-8"))
-    return copy.deepcopy(data)
+    return generated_fixture(source)
 
 
 def deliver(api: TestClient, binder_id: str, body: dict[str, Any], expected: int = 201) -> Any:
@@ -250,15 +258,17 @@ def test_the_block_must_match_the_source_and_carry_no_unknown_keys(api: TestClie
     assert "source" in detail(deliver(api, binder["id"], body, 422))
 
 
-def test_workmind_is_validated_in_full_and_then_refused_until_the_module_exists(
+def test_a_workmind_paper_is_refused_until_a_workmind_is_configured_to_verify_the_run(
     api: TestClient,
 ) -> None:
+    """Spec 3C: one paper per *accepted* run. Without a WorkMind to read the run back from,
+    acceptance cannot be verified, so the delivery is refused (503) and nothing is filed; the
+    contract itself is enforced first (D31, D37)."""
     binder = create_binder(api)
     body = fixture("workmind")
-    refused = deliver(api, binder["id"], body, 501)  # decision 6
-    assert "WorkMind intake is not available" in refused["detail"]
-    assert "valid under the contract" in refused["detail"]
-    # The contract itself is enforced first: run id, citations, no conclusion (spec 7).
+    refused = deliver(api, binder["id"], body, 503)
+    assert "no WorkMind is configured (OAK_WORKMIND_URL)" in refused["detail"]
+    assert "cannot be verified as accepted" in refused["detail"]
     body = fixture("workmind")
     del body["generated"]["run_id"]
     assert "run_id is required" in detail(deliver(api, binder["id"], body, 422))
@@ -272,8 +282,83 @@ def test_workmind_is_validated_in_full_and_then_refused_until_the_module_exists(
     body["paper"]["conclusion"] = "Receivables are recoverable."
     refused = deliver(api, binder["id"], body, 422)
     assert "conclusions are not drafted automatically (spec 7)" in refused["detail"]
-    # Nothing was filed.
-    assert all(not s["papers"] for s in api.get(f"/api/binders/{binder['id']}").json()["sections"])
+    index = api.get(f"/api/binders/{binder['id']}").json()
+    assert all(not s["papers"] for s in index["sections"])
+
+
+def test_a_workmind_paper_is_filed_only_for_a_run_workmind_reports_as_accepted(
+    api: TestClient,
+) -> None:
+    """With a WorkMind configured (here the local double), the run is read back: an accepted run
+    becomes a draft paper whose provenance records the verification; a proposed, refused or
+    unknown run files nothing (D37)."""
+    workmind = use_workmind(api)
+    binder = create_binder(api)
+    body = fixture("workmind")
+    run_id = body["generated"]["run_id"]
+    paper = deliver(api, binder["id"], body, 201)
+    assert paper["status"] == "draft" and paper["conclusion"] is None
+    assert paper["generated_by"] == "workmind"
+    generation = api.get(f"/api/papers/{paper['id']}/generation").json()
+    verification = generation["run_verification"]
+    assert verification["checked_at"]
+    assert {k: v for k, v in verification.items() if k != "checked_at"} == {
+        "module": "workmind",
+        "endpoint": f"/api/runs/{run_id}",
+        "status": "accepted",
+        "accepted_by": "manager@firm",
+        "accepted_at": "2026-10-31T12:30:00+05:30",
+    }
+    assert [c.path for c in workmind.calls] == [f"/api/runs/{run_id}"]
+    assert workmind.non_get_calls() == []
+    # The verification travels in every version's provenance block (spec 3C; D31).
+    act_as(api, PREPARER)
+    step(api, paper["id"], "prepare")
+    produced = api.get(f"/api/papers/{paper['id']}").json()
+    assert produced["versions"][-1]["body"]["generated"]["run_verification"]["status"] == "accepted"
+    # One paper per run: the same run again is refused.
+    again = deliver(api, binder["id"], body, 409)
+    assert "was already received" in again["detail"]
+    # A proposed, a refused and an unknown run file nothing.
+    for run_id, code, text in (
+        (PROPOSED_RUN, 409, "is 'proposed', not accepted"),
+        (REFUSED_RUN, 409, "is 'refused', not accepted"),
+        ("wm-run-nowhere", 404, "WorkMind has no run 'wm-run-nowhere'"),
+    ):
+        body = fixture("workmind")
+        body["paper"]["ref"] = "D-6"
+        body["generated"]["run_id"] = run_id
+        refused = deliver(api, binder["id"], body, code)
+        assert text in refused["detail"], refused
+    index = api.get(f"/api/binders/{binder['id']}").json()
+    assert {p["ref"] for s in index["sections"] for p in s["papers"]} == {"D-5"}
+
+
+def test_a_workmind_outage_or_bad_answer_refuses_the_delivery_and_files_nothing(
+    api: TestClient,
+) -> None:
+    workmind = use_workmind(api)
+    binder = create_binder(api)
+    workmind.fail_with = 503
+    refused = deliver(api, binder["id"], fixture("workmind"), 503)
+    assert "WorkMind answered HTTP 503" in refused["detail"]
+    workmind.fail_with = None
+    workmind.time_out = True
+    assert "did not answer in time" in detail(deliver(api, binder["id"], fixture("workmind"), 503))
+    workmind.time_out = False
+    workmind.non_json = True
+    assert "unexpected answer" in detail(deliver(api, binder["id"], fixture("workmind"), 503))
+    workmind.non_json = False
+    workmind.require_token = True
+    assert "refused the Binder's credential" in detail(
+        deliver(api, binder["id"], fixture("workmind"), 503)
+    )
+    index = api.get(f"/api/binders/{binder['id']}").json()
+    assert all(not s["papers"] for s in index["sections"])
+    # With the credential configured, the same delivery is filed.
+    cast(FastAPI, api.app).state.workmind_client = workmind.client(WORKMIND_TOKEN)
+    assert deliver(api, binder["id"], fixture("workmind"), 201)["generated_by"] == "workmind"
+    assert workmind.calls[-1].headers.get("authorization") == f"Bearer {WORKMIND_TOKEN}"
 
 
 def test_spine_papers_never_arrive_through_the_intake_endpoint(api: TestClient) -> None:
@@ -294,8 +379,9 @@ def test_spine_papers_never_arrive_through_the_intake_endpoint(api: TestClient) 
 
 def test_one_paper_per_run_within_a_source(api: TestClient) -> None:
     binder = create_binder(api)
-    deliver(api, binder["id"], fixture("sampling"))
-    again = fixture("sampling")
+    first = fixture("sampling")
+    deliver(api, binder["id"], first)
+    again = copy.deepcopy(first)
     again["paper"]["ref"] = "D-3b"
     refused = deliver(api, binder["id"], again, 409)
     assert (
@@ -304,7 +390,7 @@ def test_one_paper_per_run_within_a_source(api: TestClient) -> None:
     )
     # The same id under another source is another module's run.
     other = fixture("analytical_review")
-    other["generated"]["run_id"] = "sampling-run-example-001"
+    other["generated"]["run_id"] = first["generated"]["run_id"]
     deliver(api, binder["id"], other)
     # Without a run id (optional for the three modules, decision 7) nothing collides.
     for ref in ("D-6", "D-7"):

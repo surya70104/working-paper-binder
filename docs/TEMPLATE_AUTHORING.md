@@ -42,7 +42,7 @@ application rather than producing a wrong index.
 | `required[].section` | where it is filed | one of the file's section codes; completeness matches reference **and** section |
 | `required[].title` | the paper's title | non-blank |
 | `required[].sa_refs` | SA references the firm expects on the paper. The Binder screen's Create action for a missing paper prefills them, with the reference, section and title, into the new-paper form; the preparer may edit them before the paper is created, and they are saved on the paper | a list of non-blank text; may be empty |
-| `areas` (optional) | the firm's map of Schedule III heads to areas D–T, for lead schedules the Financial Spine produces (Stage E, D32) | an object keyed by area section codes D–T of this file; each value an object with `heads` and optional `objective` and `procedure` |
+| `areas` (optional) | the firm's map of Schedule III heads to areas D–T, for lead schedules the Financial Spine produces (Stage E, D32). **When absent, a default map is derived from the Spine's tree at generation time (D38)**: each root head's children, in served order, become areas D, E, F, …, named by the Spine's labels; a map entered here replaces that default entirely | an object keyed by area section codes D–T of this file; each value an object with `heads` and optional `objective` and `procedure` |
 | `areas.<code>.heads` | the Schedule III head ids the area covers, spelled exactly as the Spine's `GET /api/tree` serves them | a list of non-blank head ids; no id listed twice anywhere in the file; **ids only, never prefixes**: a listed head covers itself and every descendant found through the tree's `parent` field |
 | `areas.<code>.objective`, `.procedure` | approved wording inserted into a generated lead schedule's objective and procedure; the preparer may still edit them | non-blank text or absent |
 
@@ -84,6 +84,15 @@ Left to the firm, and therefore awaiting a chartered accountant:
    numbers are listed for review in `docs\SA_REFERENCES_FOR_CA_REVIEW.md`.
 
 ## The area map
+
+**Default when the file has none (D38).** The Binder derives a map from the Spine's `GET
+/api/tree` alone: for every root head (no `parent`), each of its children in served order is
+an area, assigned to D, E, F, … in that order; a root without children is an area itself;
+groups beyond the seventeen letters are reported on the Spine-papers card and by the check
+command, never silently dropped. The area's name is the head's label as served, and a
+generated lead schedule records `area_map_source: derived` in its provenance. The derivation
+is a technical default; entering any `areas` block here replaces it for that template. The
+check command shows the derived map when given `--tree` or `--spine`.
 
 An area covers the heads it lists and all their descendants. Descent is read **only** from the
 `parent` field each head carries in the Spine's `GET /api/tree` response: a head is a child of

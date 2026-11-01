@@ -109,6 +109,7 @@ def provenance_block(row: WpGeneration) -> dict[str, Any]:
         "received_at": row.received_at.isoformat(),
         "content_hash_at_intake": row.content_hash_at_intake,
         "spine_figures_check": row.spine_figures,
+        "run_verification": row.run_verification,
         "payload": dict(row.payload),
     }
 

@@ -24,7 +24,8 @@ test("a draft template shows its placeholders on the creation form", async () =>
   render(<BindersPage />);
   await screen.findByText("No binders yet.");
   const warning = await screen.findByTestId("template-draft");
-  expect(warning).toHaveTextContent("This index template is a draft: draft: for chartered accountant review");
+  expect(warning).toHaveTextContent("This index template is a draft: for chartered accountant review");
+  expect(warning).not.toHaveTextContent("draft: draft:");
   expect(warning).toHaveTextContent("financial statement areas D-T (17) carry generic names");
   fireEvent.change(screen.getByLabelText("Index template"), { target: { value: "tax_audit" } });
   expect(screen.queryByTestId("template-draft")).not.toBeInTheDocument();

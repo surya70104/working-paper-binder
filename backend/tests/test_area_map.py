@@ -115,3 +115,50 @@ def test_a_served_head_whose_parent_is_not_served_is_reported() -> None:
 def test_syntax_refusals_come_from_the_loader_before_any_tree_is_read() -> None:
     with pytest.raises(TemplateError, match="listed under D and E"):
         template_with({"D": {"heads": ["BS.A.1"]}, "E": {"heads": ["BS.A.1"]}})
+
+
+def test_a_default_map_is_derived_from_the_tree_one_area_per_statement_level_group() -> None:
+    """D38: each root's children in served order become areas D, E, F, …, named as the Spine
+    labels them; each covers its head and every descendant; nothing else is added."""
+    derived = area_map.derive(TREE)
+    assert derived.source == "derived" and derived.beyond_letters == ()
+    assert {code: a.heads for code, a in derived.areas.items()} == {
+        "D": ("BS.A",),
+        "E": ("BS.L",),
+        "F": ("PL.R",),
+        "G": ("PL.E",),
+    }
+    assert derived.names == {"D": "Assets", "E": "Liabilities", "F": "Revenue", "G": "Expenses"}
+    assert all(a.objective is None and a.procedure is None for a in derived.areas.values())
+    checked = area_map.check_areas(derived.areas, TREE)
+    assert checked.ok and checked.unassigned == ()
+    assert checked.coverage["D"] == {"BS.A", "BS.A.1", "BS.A.2", "X.ODD", "BS.A.2.1"}
+
+
+def test_derivation_uses_a_childless_root_itself_and_reports_groups_beyond_the_letters() -> None:
+    def head(id_: str, parent: str | None, label: str) -> SpineHead:
+        return SpineHead(id=id_, parent=parent, label=label, side=None, depth=None, mappable=True)
+
+    lone = SpineTree(division=None, version=None, heads=(head("OCI", None, "Other income"),))
+    derived = area_map.derive(lone)
+    assert derived.areas == {"D": AreaMap(("OCI",), None, None)} and derived.names == {
+        "D": "Other income"
+    }
+    many = SpineTree(
+        division=None,
+        version=None,
+        heads=(head("R", None, "Root"), *(head(f"R.{i}", "R", f"Group {i}") for i in range(20))),
+    )
+    derived = area_map.derive(many)
+    assert list(derived.areas) == list("DEFGHIJKLMNOPQRST") and len(derived.areas) == 17
+    assert derived.beyond_letters == ("R.17", "R.18", "R.19")
+    empty = area_map.derive(SpineTree(division=None, version=None, heads=()))
+    assert empty.areas == {} and empty.source == "none"
+
+
+def test_resolve_prefers_the_templates_own_map_and_names() -> None:
+    own = area_map.resolve(template_with({"D": {"heads": ["BS.A.1"]}}), TREE)
+    assert own.source == "template" and list(own.areas) == ["D"]
+    assert own.names == {"D": "Financial statement area D"}
+    none = area_map.resolve(parse_template("statutory", valid_document()), TREE)
+    assert none.source == "derived" and list(none.areas) == ["D", "E", "F", "G"]

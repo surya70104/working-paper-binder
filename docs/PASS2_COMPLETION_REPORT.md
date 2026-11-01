@@ -212,5 +212,160 @@ described as connected.
 
 ## 8. Commit
 
-Nothing from Pass 2 or the follow-up (D35) is committed or pushed. The working tree holds
-Stages A–G and the follow-up in full; the commit is the user's call.
+Pass 2 (Stages A–G) and the follow-up (D35) are committed as `8e2c326` on `main` and pushed
+to `origin/main`. The completion work, the acceptance audit and the fix (sections 9–11) are in the
+working tree, uncommitted, awaiting approval.
+
+## 9. Completion against the specification without external input (1 November 2026)
+
+The specification defines Pass 1 and Pass 2 only (§6); what follows is completion work, fixes
+and acceptance verification within that scope, not a further phase. Direction from the owner: no senior, chartered accountant, firm or other person will supply
+requirements, decisions or approvals; the specification is the only source; gaps are closed by
+conservative technical decisions, recorded, built and tested, with local doubles for systems
+that do not exist and a clear line between a tested local integration and a live one (D39).
+Sections 2, 3, 4, 5, 6 and 8 of the specification were re-read against the code. Three gaps
+remained; all three are now built.
+
+| Spec | Gap found | Built | Decision |
+|---|---|---|---|
+| §3E "a reference pointing at a deleted or superseded paper is surfaced, and blocks assembly" | an amended target was information only (D26, pending a reading) | a superseded target blocks as `broken_reference` until a person confirms the reference against the current version (`POST /api/xrefs/{id}/confirm`), recorded with who, when and version; allowed after assembly, refused on a purged binder or when nothing changed; a reference made to a draft takes the first version as baseline | D36, migration 0010 |
+| §3C "one paper per accepted run" (WorkMind) | every WorkMind delivery refused (501) | run read back from a configured WorkMind (`GET /api/runs/{run_id}`); filed only when `accepted`; 409 otherwise, 404 unknown, 503 unconfigured or unreachable; verification recorded in the provenance; tested against `tests/fake_workmind.py` | D37, migration 0010 |
+| §3A "lead schedule per area, tying to the Financial Spine" | no lead schedule could be generated for a shipped template (empty area map) | a default map derived from the Spine's tree (each root's children in served order as D, E, F, …, named by the Spine's labels); the template's own map replaces it; `map_source` on the status and in the paper's provenance | D38 |
+
+Readings taken without adding a rule (D39): only the conclusion is mandatory at sign-off (spec
+§8.1); no reviewer-identity rule (spec §3D states none). Everything else in sections 2–8 was
+found implemented and tested in Passes 1 and 2 (sections 2 and 3 above).
+
+**Live versus local integrations**
+
+| System | Live integration | Local, tested integration |
+|---|---|---|
+| Financial Spine | client built (D29); no Spine configured or running here | `tests/fake_spine.py`: every Spine feature verified against it |
+| WorkMind | client built (D37); no WorkMind exists | `tests/fake_workmind.py` |
+| Materiality, Sampling, Analytical Review | none exists; they push to the intake | example deliveries in `tests/fixtures/generated` |
+| Google Drive vault | adapter built and verified against the firm's folder (D27); `OAK_STORE=vault` in development | in-memory vault double |
+
+**Templates.** All four load; sections and papers are the specification's; D–T names remain
+placeholders in the index while generated lead schedules carry the Spine's head labels (D38);
+the loader refuses a generated reference outside its section (D35). Nothing beyond the
+specification's words was written into them.
+
+**Not built, with reasons.** Reviewer-identity enforcement (no rule in the specification);
+connections to modules that do not exist (contracts and doubles only); a confirmation event row
+(the reference is the record; event kinds are fixed by migration 0002).
+
+**Tests and checks after the completion work**: see section 9a.
+
+## 9a. Tests and checks after the completion work (final run, 1 November 2026)
+
+| Check | Result |
+|---|---|
+| Backend suite against `oak_binder_test` (386 collected) | **385 passed, 1 skipped** (database-rebuild test, off by default), 0 failed |
+| Backend format (ruff format), lint (ruff) on `src`, `tests` and migration 0010 | pass, 125 files |
+| Backend types (mypy strict, `src` and `tests`) | pass, 124 files |
+| Template check on the four shipped files | 4 of 4 load |
+| Frontend unit tests (vitest) | **83 passed**, 17 files |
+| TypeScript typecheck and production build | pass |
+| `oak_binder_test` | migration 0010 applied (xref confirmation columns, `wp_generation.run_verification`); 13 tables; 3 binders |
+| Live `oak_binder` | 0 tables, no `alembic_version`, before and after |
+| Specification, CAF | byte-identical and unchanged; CAF 0 changes at `d11246f` |
+| Line endings | no CRLF in any changed or new file |
+
+Nine backend tests and five frontend tests were added or rewritten for this work. Nothing from
+it is committed or pushed.
+
+## 10. Acceptance audit (1 November 2026, D40)
+
+Every requirement of specification sections 2, 3, 4, 5, 6, 7 and 8 was taken individually and
+marked PASS only where implemented and verified on this build: `docs/ACCEPTANCE_MATRIX.md`
+names, per requirement, the implementation, the API, the screen, the model, the proving test
+and what was exercised in the browser. Evidence: `backend/tests/test_acceptance_spec.py`
+(eighteen clause tests and one end-to-end test of every user workflow), the feature modules,
+the frontend component tests, and a browser walk-through of binder `ACCEPT-2026-11-01` on the
+development servers with the Spine and WorkMind doubles served over HTTP
+(`backend/tests/local_stubs.py`, `scripts/dev_backend_with_doubles.ps1`).
+
+Four screen defects were found by the walk-through and fixed with tests: the Spine-papers card
+did not refetch after the link was saved; the cross-references panel said FS lines are never
+checked; a Spine paper's locked-fields note misnamed objective and procedure as locked; the
+Assembly screen drew an empty "Not checked:" heading. Gaps that remain are stated in the
+matrix: no module is live, template content is the specification's words only, no
+reviewer-identity rule, one development identity, and one once-observed stale Assembly screen
+that a reload corrected and that did not recur.
+
+**Tests and checks after the audit**: see section 10a.
+
+## 10a. Tests and checks after the acceptance audit (final run, 1 November 2026)
+
+| Check | Result |
+|---|---|
+| Backend suite against `oak_binder_test` (404 collected, incl. 19 acceptance tests) | **403 passed, 1 skipped** (database-rebuild test, off by default), 0 failed |
+| Backend format (ruff format), lint (ruff), types (mypy strict) | pass, 126 files |
+| Frontend unit tests (vitest) | **85 passed**, 17 files |
+| TypeScript typecheck and production build | pass |
+| `oak_binder_test` | 0010; 13 tables; 4 binders (the walk-through's `ACCEPT-2026-11-01` kept, like the earlier demo binders) |
+| Live `oak_binder` | 0 tables, no `alembic_version`, before and after |
+| Specification, CAF | byte-identical and unchanged; CAF 0 changes at `d11246f` |
+| Line endings | no CRLF in any changed or new file |
+
+One finding about the suite itself: the browser walk-through filed the fixture run ids and an
+attachment whose bytes equalled the test evidence into the shared test database, and 22 tests
+that had silently relied on no demo row holding those values failed until they were made
+independent (per-session evidence bytes, per-call run ids; `tests/helpers.py`). The product
+behaviour behind the failures, one paper per run across binders and one document per content
+hash, is as designed. Nothing from the audit is committed or pushed.
+
+## 11. The stale Assembly screen, found and fixed (1 November 2026, D41)
+
+The one defect the audit observed but could not explain was a backend race: the request session
+committed after the response had been sent (FastAPI's default scope for a dependency with
+``yield``), so the screen's reload right after Assemble could read the binder row before the
+commit and the event rows after it. Reproduced on the development backend (one of six
+immediate reads showed ``state: open`` with the ``assembled`` event listed); fixed by declaring
+the session dependency with ``scope="function"`` so the commit completes before the response,
+pinned by `backend/tests/test_session_scope.py`; five trials after the fix read the assembled
+state and the POST's own hash every time. The Assembly screen now also applies an action's own
+answer and ignores a reload that reports fewer events than it shows; three screen tests cover
+the stale reload, a refused Assemble (state stays open) and re-assembly after an amendment.
+Every action-then-reload pair on every screen had the same exposure; one fix covers them all.
+
+## 12. Final verification before demonstration (1 November 2026)
+
+The complete change set was reconciled file by file (49 modified, 9 new; no secret, credential,
+environment file or stray file; `.env`, `secrets/` and `var/` remain ignored), every suite and
+check was run once more, the five screens and the main workflows were smoke-tested on the
+development servers with the local doubles, and the acceptance matrix was re-read against the
+specification. Two texts found misleading were corrected with tests: the Binders screen doubled
+the "draft:" prefix on the template warning, and the template placeholder still said no lead
+schedule could be generated without a firm map although the derived map (D38) now applies.
+The demonstration sequence, the status report for the senior, the feature list and the
+limitations to disclose are in `docs/DEMONSTRATION_AND_STATUS.md`.
+
+| Check | Result |
+|---|---|
+| Backend suite against `oak_binder_test` (405 collected) | **404 passed, 1 skipped** (database-rebuild test, off by default), 0 failed |
+| ruff format, ruff check, mypy strict | pass, 127 files |
+| Frontend unit tests (vitest) | **88 passed**, 17 files |
+| TypeScript typecheck and production build | pass |
+| Browser smoke test | five screens and the generated papers' panels on `ACCEPT-2026-11-01`; Binders screen warning corrected |
+| Live `oak_binder` | 0 tables, no `alembic_version` |
+| `oak_binder_test` | migrations 0001–0010; shared with the demonstration data and preserved by the suite |
+| Specification | byte-identical in both locations, unchanged in git |
+| CAF / OAK Audit | 0 changes, HEAD `d11246f` |
+| Line endings | no CRLF in any changed or new file |
+
+**Integration status, honestly:** the Financial Spine, WorkMind, Materiality, Sampling and
+Analytical Review are integrated against stated contracts and local doubles; no live system is
+connected. The Google Drive vault is the one live external integration, verified against the
+firm's folder (D27) and switched off for the demonstration backend in favour of the local store.
+Nothing is committed or pushed; the final Git operation follows the owner's review.
+
+| Check | Result |
+|---|---|
+| Backend suite against `oak_binder_test` (405 collected) | **404 passed, 1 skipped**, 0 failed |
+| ruff format, ruff check, mypy strict | pass, 127 files |
+| Frontend unit tests (vitest) | **88 passed**, 17 files |
+| TypeScript typecheck and production build | pass |
+| Live `oak_binder`; specification; CAF | 0 tables; byte-identical; 0 changes at `d11246f` |
+
+Nothing is committed or pushed.

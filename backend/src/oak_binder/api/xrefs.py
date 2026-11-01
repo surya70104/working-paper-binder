@@ -90,3 +90,14 @@ def binder_xref_map(
 def remove(xref_id: uuid.UUID, session: DbSession) -> Response:
     xrefs.remove(session, xrefs.get(session, xref_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/api/xrefs/{xref_id}/confirm")
+def confirm(
+    xref_id: uuid.UUID, session: DbSession, user: CurrentUser, now: Now, spine: Spine
+) -> PaperOut:
+    """Confirm a reference whose target paper was amended since the reference was made (spec
+    3E "superseded"; D36): records who, when and the target's current version, and the
+    reference stops blocking assembly. 409 when the target has not changed."""
+    xref = xrefs.confirm(session, xrefs.get(session, xref_id), user=user, now=now)
+    return paper_out(session, xref.from_wp, spine)

@@ -276,6 +276,15 @@ export function GeneratedPanel({
         <Row label="Delivered">
           {generation.received_by} <span className="text-slate-500">{generation.received_at}</span>
         </Row>
+        {generation.run_verification && (
+          <Row label="Run verified">
+            <span data-testid="gen-run-verified">
+              {String(generation.run_verification.status)} by {String(generation.run_verification.accepted_by ?? "—")}{" "}
+              <span className="text-slate-500">{String(generation.run_verification.accepted_at ?? "")}</span>, read from
+              WorkMind at {String(generation.run_verification.checked_at ?? "")}
+            </span>
+          </Row>
+        )}
         <SourceBlock generation={generation} />
         <Row label="Fields hash at intake">
           <code className="break-all font-mono text-xs">{generation.content_hash_at_intake}</code>

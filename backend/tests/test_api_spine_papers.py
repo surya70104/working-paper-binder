@@ -267,15 +267,11 @@ def test_generation_is_refused_by_name_when_it_cannot_be_done(
     api: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     spine = use_spine(api)
-    # Shipped template: no area map.
+    # Shipped template: no area map, so one is derived from the tree (D38) and nothing refuses.
     binder = create_binder(api)
     link(api, binder["id"])
     status = status_of(api, binder["id"])
-    assert (
-        status["can_generate"] is False and "no area map for template statutory" in status["reason"]
-    )
-    refused = generate(api, binder["id"], None, 422)
-    assert "no area map for template statutory" in refused["detail"]
+    assert status["can_generate"] is True and status["map_source"] == "derived"
 
     use_area_map(monkeypatch)
     # An area the map does not cover.
@@ -350,3 +346,45 @@ def test_no_generation_after_assembly(api: TestClient, monkeypatch: pytest.Monke
     rows = api.get(f"/api/binders/{binder['id']}/assembly").json()["access"]
     assert [r["action"] for r in rows if r["user"] == "quality.reviewer@firm"][0] == "Spine papers"
     act_as(api, PREPARER)
+
+
+def test_without_a_template_map_areas_are_derived_from_the_spine_tree(api: TestClient) -> None:
+    """D38: the shipped templates carry no map; the Spine's tree gives one area per
+    statement-level head group, named as the Spine names it, and lead schedules generate."""
+    use_spine(api)
+    binder = create_binder(api, report_date="2026-09-30")
+    link(api, binder["id"])
+    status = status_of(api, binder["id"])
+    assert status["can_generate"] is True and status["reason"] is None
+    assert status["map_source"] == "derived" and status["beyond_letters"] == []
+    assert status["unassigned_heads"] == [] and status["map_problems"] == []
+    by_code = {a["code"]: a for a in status["areas"]}
+    assert {c: by_code[c]["mapped"] for c in "DEFGH"} == {
+        "D": True,
+        "E": True,
+        "F": True,
+        "G": True,
+        "H": False,
+    }
+    assert [by_code[c]["name"] for c in "DEFG"] == ["Assets", "Liabilities", "Revenue", "Expenses"]
+    assert by_code["D"]["listed_heads"] == ["BS.A"]
+    assert by_code["H"]["name"] == "Financial statement area H"
+
+    papers = generate(api, binder["id"], None)
+    assert [p["ref"] for p in papers] == ["D-L", "E-L", "F-L", "G-L"]
+    assert [p["title"] for p in papers] == [
+        "Lead schedule: Assets",
+        "Lead schedule: Liabilities",
+        "Lead schedule: Revenue",
+        "Lead schedule: Expenses",
+    ]
+    assert all(p["objective"] is None and p["procedure"] is None for p in papers)
+    inputs = papers[0]["generated"]["payload"]["inputs"]
+    assert inputs["area_map_source"] == "derived" and inputs["listed_heads"] == ["BS.A"]
+    assert set(inputs["covered_heads"]) == {"BS.A", "BS.A.1", "BS.A.2", "X.ODD", "BS.A.2.1"}
+    after = status_of(api, binder["id"])
+    assert {a["code"]: a["state"] for a in after["areas"] if a["mapped"]} == {
+        c: "current" for c in "DEFG"
+    }
+    refused = generate(api, binder["id"], ["H"], 422)
+    assert "map derived from the Spine's tree" in refused["detail"]

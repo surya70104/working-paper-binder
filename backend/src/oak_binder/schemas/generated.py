@@ -352,6 +352,8 @@ class GenerationOut(BaseModel):
     received_at: datetime
     content_hash_at_intake: str
     spine_figures_check: str | None
+    # D37: how the delivery's run was verified at intake (the WorkMind run read back), or None.
+    run_verification: dict[str, Any] | None
     locked_fields: list[str]
     payload: dict[str, Any]
     # Stage E (D32): for a paper the Financial Spine produced, whether it still matches the
@@ -377,6 +379,7 @@ class GenerationOut(BaseModel):
             received_at=row.received_at,
             content_hash_at_intake=row.content_hash_at_intake,
             spine_figures_check=row.spine_figures,
+            run_verification=row.run_verification,
             locked_fields=list(locked_fields),
             payload=dict(row.payload),
         )

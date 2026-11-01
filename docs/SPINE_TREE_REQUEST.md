@@ -5,6 +5,9 @@
 **To:** the operator of the Financial Spine (the OAK Audit sibling module)
 **From:** the Working Paper Binder project, `D:\WORKING PAPER BINDER`
 
+**Status (1 November 2026, D38): optional.** The Binder reads the tree from a configured Spine
+at generation time; an export is useful only for checking a firm map offline.
+
 **What is requested.** One export of the Financial Spine's Schedule III head tree: the full response of `GET /api/tree`, saved as a JSON file, unaltered. The Binder reads this endpoint read-only; it never writes to the Spine.
 
 **Why.** The Binder's index templates map Schedule III heads to financial statement areas so that lead schedules can be generated from a locked Spine version. The chartered accountant chooses the head ids from this tree, and the Binder's check command validates a template against it: every listed id must exist, and no head may fall under two areas after expansion through the tree's `parent` field. Without the export, only the syntax of a map can be checked.

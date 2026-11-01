@@ -110,7 +110,7 @@ export function assemblyFixture(overrides: Partial<AssemblyStatus> = {}): Assemb
       { kind: "unsigned_paper", ref: "C-1", detail: "status is in_review" },
     ],
     not_checked: [
-      "cross-references to FS lines: the Financial Spine is not part of this product (D21), so a reference to a Spine line cannot be followed; references to papers and documents are checked (none in this file)",
+      "cross-references to FS lines: the binder is not linked to a Financial Spine version (D29, D30), so a reference to an FS line cannot be followed; references to papers and documents are checked (none in this file)",
     ],
     manifest: null,
     events: [],
@@ -140,6 +140,8 @@ export const SPINE_PAPERS_NONE = {
   },
   map_problems: [],
   unassigned_heads: [],
+  map_source: "none",
+  beyond_letters: [],
 };
 
 export const SPINE_UNCONFIGURED = {

@@ -53,9 +53,9 @@ from oak_binder.services import area_map, fs_lines
 from oak_binder.services import generated as generated_service
 from oak_binder.services import papers as paper_service
 from oak_binder.services import xrefs as xref_service
-from oak_binder.services.area_map import AreaMapCheck
+from oak_binder.services.area_map import AreaMapCheck, ResolvedAreas
 from oak_binder.services.spine_client import SpineClient, SpineTree, SpineVersion
-from oak_binder.services.templates import AREA_SECTIONS, IndexTemplate, load_template
+from oak_binder.services.templates import AREA_SECTIONS, AreaMap, IndexTemplate, load_template
 
 MODULE = "oak_spine"
 NO_FIGURE = "no figure served"
@@ -65,6 +65,27 @@ CHAIN_SECTION = "W"  # Completion (spec 3A): the chain is a completion record (d
 # person who asked (who is the provenance row's received_by). The marker is how a Binder-
 # written reference is told apart from one a person typed (step E4, ownership rule).
 REFERENCE_CREATOR = MODULE
+
+
+NO_AREAS = (
+    "no area map for template {template} and the Spine's tree has no heads to derive one from, so "
+    "no lead schedule can be generated (TEMPLATE_AUTHORING item 1; D38)"
+)
+
+
+def _require_area(resolved: ResolvedAreas, template: IndexTemplate, code: str) -> None:
+    if not resolved.areas:
+        raise Invalid(NO_AREAS.format(template=template.name))
+    if code not in resolved.areas:
+        where = (
+            f"the area map of template {template.name}"
+            if resolved.source == "template"
+            else "the map derived from the Spine's tree (the template has none; D38)"
+        )
+        raise Invalid(
+            f"area {code} has no Schedule III heads in {where}; no lead schedule can be generated "
+            "for it"
+        )
 
 
 def lead_schedule_ref(area: str) -> str:
@@ -241,6 +262,9 @@ class SpinePapersStatus:
     chain: ChainStatus
     map_problems: tuple[str, ...] = field(default_factory=tuple)
     unassigned_heads: tuple[str, ...] = field(default_factory=tuple)
+    # D38: "template" (the template's own map), "derived" (from the Spine's tree) or "none".
+    map_source: str = "none"
+    beyond_letters: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _spine_rows(session: Session, binder: Binder) -> list[tuple[Wp, WpGeneration, dict[str, Any]]]:
@@ -330,18 +354,18 @@ def status(session: Session, client: SpineClient | None, binder: Binder) -> Spin
     problems: tuple[str, ...] = ()
     unassigned: tuple[str, ...] = ()
     reason = ready.reason
+    resolved = area_map.from_template(template)
     if ready.ok and client is not None:
-        if not template.areas:
-            reason = (
-                f"no area map for template {template.name}: no Schedule III head is assigned "
-                "to any area D-T, so no lead schedule can be generated (TEMPLATE_AUTHORING item 1)"
-            )
+        try:
+            tree = client.tree()
+        except SpineUnavailable as exc:
+            reason = str(exc)
         else:
-            try:
-                checked = area_map.check(template, client.tree())
-            except SpineUnavailable as exc:
-                reason = str(exc)
+            resolved = area_map.resolve(template, tree)
+            if not resolved.areas:
+                reason = NO_AREAS.format(template=template.name)
             else:
+                checked = area_map.check_areas(resolved.areas, tree)
                 problems = checked.problems
                 unassigned = checked.unassigned
                 if problems:
@@ -351,8 +375,8 @@ def status(session: Session, client: SpineClient | None, binder: Binder) -> Spin
     areas: list[AreaStatus] = []
     for code in AREA_SECTIONS:
         section = template.section(code)
-        name = section.name if section else f"Section {code}"
-        area = template.areas.get(code)
+        name = resolved.names.get(code) or (section.name if section else f"Section {code}")
+        area = resolved.areas.get(code)
         paper_generation = existing.get(code)
         if paper_generation is not None:
             paper, generation = paper_generation
@@ -393,6 +417,8 @@ def status(session: Session, client: SpineClient | None, binder: Binder) -> Spin
     return SpinePapersStatus(
         can_generate=ready.ok and reason is None,
         reason=reason,
+        map_source=resolved.source,
+        beyond_letters=resolved.beyond_letters,
         version_id=version.version_id if version else None,
         version_label=version.label if version else None,
         version_hash=version.hash if version else None,
@@ -477,11 +503,10 @@ def _block_for_area(
     client: SpineClient,
     version: SpineVersion,
     tree: SpineTree,
-    template: IndexTemplate,
+    area: AreaMap,
     checked: AreaMapCheck,
     code: str,
 ) -> SpineBlock:
-    area = template.areas[code]
     covered = checked.coverage[code]
     heads = area_map.heads_of(area, tree)
     presentation = client.presentation(version.version_id)
@@ -706,26 +731,17 @@ def lead_schedule(
     template = load_template(binder.template)
     if code not in AREA_SECTIONS:
         raise Invalid(f"{code!r} is not a financial statement area D-T")
-    if not template.areas:
-        raise Invalid(
-            f"no area map for template {template.name}: no Schedule III head is assigned to any "
-            "area D-T, so no lead schedule can be generated (TEMPLATE_AUTHORING item 1)"
-        )
-    if code not in template.areas:
-        raise Invalid(
-            f"area {code} has no Schedule III heads in the area map of template {template.name}; "
-            "no lead schedule can be generated for it"
-        )
     tree = client.tree()
-    checked = area_map.check(template, tree)
+    resolved = area_map.resolve(template, tree)
+    _require_area(resolved, template, code)
+    checked = area_map.check_areas(resolved.areas, tree)
     if not checked.ok:
         raise Invalid(
             "the area map is refused against the Spine's tree: " + "; ".join(checked.problems)
         )
-    block = _block_for_area(client, version, tree, template, checked, code)
-    section = template.section(code)
-    area_name = section.name if section else f"Section {code}"
-    area = template.areas[code]
+    area = resolved.areas[code]
+    block = _block_for_area(client, version, tree, area, checked, code)
+    area_name = resolved.names[code]
     paper = PaperFields(
         ref=lead_schedule_ref(code),
         section=code,
@@ -747,6 +763,7 @@ def lead_schedule(
             "version_id": str(version.version_id),
             "version_hash": version.hash,
             "area": code,
+            "area_map_source": resolved.source,
             "listed_heads": list(area.heads),
             "covered_heads": sorted(checked.coverage[code]),
             "tree_version": tree.version,
@@ -825,16 +842,16 @@ def lead_schedules(
     """Generate the named areas' lead schedules, or, with ``codes`` None, every mapped area that
     has none yet. Every named area must succeed; one refusal fails the whole request."""
     if codes is None:
+        ready = readiness(client, binder)
+        if not ready.ok or client is None:
+            raise ready.refuse("cannot generate Spine papers")
         template = load_template(binder.template)
+        resolved = area_map.resolve(template, client.tree())
         existing = _lead_schedules(session, binder)
-        codes = [c for c in AREA_SECTIONS if c in template.areas and c not in existing]
+        codes = [c for c in AREA_SECTIONS if c in resolved.areas and c not in existing]
         if not codes:
-            if not template.areas:
-                raise Invalid(
-                    f"no area map for template {template.name}: no Schedule III head is "
-                    "assigned to any area D-T, so no lead schedule can be generated "
-                    "(TEMPLATE_AUTHORING item 1)"
-                )
+            if not resolved.areas:
+                raise Invalid(NO_AREAS.format(template=template.name))
             raise Conflict("every mapped area already has its lead schedule; nothing to generate")
     if not codes:
         raise Invalid("name at least one area, or omit 'areas' for every mapped area without one")
@@ -1257,21 +1274,21 @@ def regenerate(
     if kind == "lead_schedule":
         code = str(_block_of(previous).get("area") or "")
         template = load_template(binder.template)
-        if code not in template.areas:
-            raise Invalid(
-                f"area {code} has no Schedule III heads in the area map of template "
-                f"{template.name}; the lead schedule cannot be regenerated"
-            )
         tree = client.tree()
-        checked = area_map.check(template, tree)
+        resolved = area_map.resolve(template, tree)
+        if code not in resolved.areas:
+            raise Invalid(
+                f"area {code} has no Schedule III heads in the area map in force for template "
+                f"{template.name} ({resolved.source}); the lead schedule cannot be regenerated"
+            )
+        checked = area_map.check_areas(resolved.areas, tree)
         if not checked.ok:
             raise Invalid(
                 "the area map is refused against the Spine's tree: " + "; ".join(checked.problems)
             )
-        block = _block_for_area(client, version, tree, template, checked, code)
-        section = template.section(code)
-        area_name = section.name if section else f"Section {code}"
-        area = template.areas[code]
+        area = resolved.areas[code]
+        block = _block_for_area(client, version, tree, area, checked, code)
+        area_name = resolved.names[code]
         fields = PaperFields(
             ref=paper.ref,
             section=code,
@@ -1289,6 +1306,7 @@ def regenerate(
             "version_id": str(version.version_id),
             "version_hash": version.hash,
             "area": code,
+            "area_map_source": resolved.source,
             "listed_heads": list(area.heads),
             "covered_heads": sorted(checked.coverage[code]),
             "tree_version": tree.version,

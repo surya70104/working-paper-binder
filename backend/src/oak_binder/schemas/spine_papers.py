@@ -102,6 +102,10 @@ class SpinePapersStatusOut(BaseModel):
     chain: ChainStatusOut
     map_problems: list[str]
     unassigned_heads: list[str]
+    # D38: where the areas come from: the template's own map, one derived from the Spine's
+    # tree, or none; head groups the derivation could not give a letter D-T.
+    map_source: str
+    beyond_letters: list[str]
 
     @classmethod
     def build(cls, s: SpinePapersStatus) -> SpinePapersStatusOut:
@@ -115,4 +119,6 @@ class SpinePapersStatusOut(BaseModel):
             chain=ChainStatusOut.build(s.chain),
             map_problems=list(s.map_problems),
             unassigned_heads=list(s.unassigned_heads),
+            map_source=s.map_source,
+            beyond_letters=list(s.beyond_letters),
         )

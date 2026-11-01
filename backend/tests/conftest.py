@@ -39,6 +39,7 @@ from oak_binder.db import make_engine
 from oak_binder.main import create_app
 from oak_binder.services.attachments import InMemoryVaultStore
 from tests.fake_spine import FakeSpine
+from tests.fake_workmind import FakeWorkMind
 
 APP_URL = "postgresql+psycopg://oak_binder_app:placeholder@localhost:5432/oak_binder"
 TEST_URL = "postgresql+psycopg://oak_binder_owner:placeholder@localhost:5432/oak_binder_test"
@@ -245,6 +246,13 @@ def use_spine(api: TestClient) -> FakeSpine:
     spine = FakeSpine()
     cast(FastAPI, api.app).state.spine_client = spine.client()
     return spine
+
+
+def use_workmind(api: TestClient, credential: str | None = None) -> FakeWorkMind:
+    """Give the running app a WorkMind double (D37)."""
+    workmind = FakeWorkMind()
+    cast(FastAPI, api.app).state.workmind_client = workmind.client(credential)
+    return workmind
 
 
 def use_vault(api: TestClient) -> InMemoryVaultStore:

@@ -832,6 +832,167 @@ not exist. Built here, all small and all without inventing content:
   templates' content and area maps (`docs/TEMPLATE_CONTENT_REQUEST.md`,
   `docs/SPINE_TREE_REQUEST.md`), and anything that would encode a firm policy.
 
+## D36 · A superseded paper target blocks assembly until confirmed — 1 Nov 2026
+
+Spec 3E: "a reference pointing at a deleted or superseded paper is surfaced, and blocks
+assembly." D26 surfaced an amended target as information only, pending a reading from the
+senior; no reading will come, so the specification's own words are applied (Pass 2 completion
+work; migration 0010).
+
+- **Superseded means amended.** Papers are never deleted here (spec 3F), so the only way a
+  paper target is superseded is a change to its content after the reference was made: the
+  content hash of the target's version at that time differs from its current version's. A
+  reference made while the target was still a draft takes the target's first version as its
+  baseline, so preparing a referenced draft is not a change but amending it later is. Sign-off
+  steps copy content and never count.
+- **It blocks as a broken reference**, under the spec's own blocker name, with the detail
+  "superseded: … confirm the reference against the current version, or remove it". No new
+  blocker kind: the inventory pinned in Stage G stands.
+- **A person confirms** (`POST /api/xrefs/{id}/confirm`): the reference records who confirmed
+  it, when, and the target's version confirmed (`xref.confirmed_by/at/version`, set together,
+  checked at the database). The reference then stops blocking until the target changes again,
+  which supersedes the confirmation in turn and names the confirmed version. Confirming is
+  refused when nothing has changed, so every confirmation records a real decision, and on a
+  purged binder. It is allowed on an assembled binder: an amendment after assembly supersedes
+  the references to the amended paper, removal is refused after assembly (spec 3F), and the
+  confirmation is what lets the file be re-assembled.
+- **Screens and archive.** The paper screen's cross-reference rows show "superseded: …" in
+  red with a Confirm action, count it as blocking, and show who confirmed a cleared one; the
+  map keeps its amended flag; `cross_references.json` carries the confirmation fields.
+- **Not done**: no event row for a confirmation (the reference itself is the record; the event
+  kinds are fixed by migration 0002's check), and no automatic re-confirmation.
+
+## D37 · WorkMind papers are filed after the run is read back as accepted — 1 Nov 2026
+
+Spec 3C: WorkMind produces "one paper per accepted run, carrying the run id, the inputs and the
+source-row citations". D31 validated the delivery in full and refused it (501) because no
+WorkMind existed to say whether a run was accepted. The completion work replaces the refusal with the
+verification the specification implies, against a stated contract and a local double, since
+the module itself still does not exist.
+
+- **A read-only WorkMind client** (`services/workmind_client.py`, `OAK_WORKMIND_URL`, optional
+  `OAK_WORKMIND_CREDENTIAL`, GET only) reads `GET /api/runs/{run_id}` and expects
+  `{"run_id", "status", "accepted_by", "accepted_at"}`; anything else served is ignored. This
+  contract is the Binder's statement of what a WorkMind must serve, kept to the fields the
+  specification names and the fact the intake needs.
+- **The intake files a WorkMind paper only when WorkMind reports the run accepted.** No
+  WorkMind configured: 503, the run cannot be verified, nothing filed. A run that is proposed,
+  refused or anything but accepted: 409. An unknown run: 404. WorkMind down, timing out,
+  answering non-JSON or refusing the credential: 503. The conclusion rule (spec 7) and the
+  one-paper-per-run rule are unchanged.
+- **The verification is recorded** on the generation row (`wp_generation.run_verification`:
+  endpoint read, status, who accepted, when, when checked; migration 0010) and travels in every
+  version's provenance block; the paper screen shows it.
+- **Tested local integration, not a live one.** `tests/fake_workmind.py` is an in-process
+  double with accepted, proposed and refused runs and the usual failure switches. No WorkMind
+  has been connected; `OAK_WORKMIND_URL` is unset in development. When a WorkMind exists, its
+  run endpoint must serve the fields above, or this client's contract is revised then.
+
+## D38 · A default area map derived from the Spine's tree — 1 Nov 2026
+
+Spec 3A: "lead schedule per area, tying to the Financial Spine". D32 built the generation but
+made it depend on an area map the firm supplies in the template, and the shipped templates
+carry none, so no lead schedule could be generated. No map will be supplied; the specification
+must work on its own. The Binder now derives a default map from the Spine's tree when the
+template has none.
+
+- **The rule**, from the tree alone: for every root head (``parent`` None) in served order, each
+  of its children in served order is an area; a root with no children is an area itself. The
+  groups are assigned to D–T in that order; groups beyond the seventeen letters are reported,
+  never silently dropped. Each area lists exactly its head and so covers that head and every
+  descendant by the tree's own parent links. The area is named by the head's label as the Spine
+  serves it. The Binder adds no head, no name and no grouping the tree does not state, and
+  reads nothing from the shape of an id.
+- **The template's map, once entered, replaces it** entirely (`area_map.resolve`): a template
+  with any `areas` block is never mixed with the derivation. Status, generation, regeneration
+  and the check command all go through the same resolution; the lead schedule's provenance
+  records `area_map_source`, so a paper says which map produced it.
+- **Consequences.** With the shipped templates and a linked, locked version, the Spine-papers
+  card lists the derived areas with the Spine's names, generates their lead schedules and says
+  the map is derived. The template's section names for D–T stay the placeholders (they are the
+  index headings; the lead schedule carries the Spine's name). The firm's map remains the
+  intended end state; `docs/TEMPLATE_CONTENT_REQUEST.md` is now an optional input.
+- **Limit.** Which grouping of Schedule III heads makes a sensible audit area is the firm's
+  judgement; the derivation is a technical default (statement-level groups), stated as such on
+  the screen and in the paper's provenance, not an audit opinion.
+
+## D39 · Completion stance: the specification alone, assumptions recorded — 1 Nov 2026
+
+The specification defines two passes (§6) and this project adds none: everything from D36 on is
+completion work, fixes and acceptance verification within Pass 1 and Pass 2's scope. From
+1 November 2026 the project takes no input from the senior, a chartered accountant, the
+firm or any other person: `WORKING_PAPER_BINDER.md` is the only source, every gap is closed by
+a conservative technical decision recorded here, and integrations with systems that do not
+exist are built against a stated contract and a local double, said to be exactly that.
+
+- **Readings taken without a rule to add.** Spec 2 "the WP template forces objective →
+  procedure → result → conclusion; a WP missing a conclusion cannot be signed off" is read as
+  the field structure in that order (the screens present it) plus the one hard rule the
+  specification states (8.1); objective, procedure and result are not made mandatory at
+  sign-off, since the specification names only the conclusion and a Spine-produced paper
+  arrives with objective and procedure for the preparer to write. Spec 3D states no rule about
+  who may review at which level; none is enforced (D33), and the question document is kept as
+  an optional input.
+- **Live versus local, stated.** Financial Spine: live client (D29) and the `FakeSpine` double;
+  no Spine is configured in development, so every Spine feature here is verified against the
+  double. WorkMind: client and `FakeWorkMind` double (D37); no live WorkMind exists.
+  Materiality, Sampling, Analytical Review: they push to the intake; verified with the example
+  deliveries in `tests/fixtures/generated`; no module exists. Google Drive vault: live adapter
+  verified against the firm's folder (D27) and the in-memory double.
+- **Templates.** Four files with the specification's sections and papers, placeholders where
+  the specification is silent; the derived area map (D38) makes lead schedules work without a
+  firm map. Nothing beyond the specification's words is written into them.
+- **The three request documents** (`TEMPLATE_CONTENT_REQUEST.md`, `SPINE_TREE_REQUEST.md`,
+  `REVIEW_LEVEL_POLICY_REQUEST.md`) remain as optional inputs that would refine defaults; the
+  Binder does not wait for them.
+
+## D40 · Acceptance audit against the specification — 1 Nov 2026
+
+Every requirement of spec sections 2–8 was taken individually: implementation, API, screen and
+model named, a test run or written, and the behaviour exercised in the browser. The matrix is
+`docs/ACCEPTANCE_MATRIX.md`; the evidence is `backend/tests/test_acceptance_spec.py` (one test
+per clause and one end-to-end walk of every user workflow) and the feature modules it cites.
+
+- **Local doubles served over HTTP.** `backend/tests/local_stubs.py` serves the same Spine and
+  WorkMind doubles the suite uses, so a development backend can be pointed at them
+  (`scripts/dev_backend_with_doubles.ps1`: `oak_binder_test`, local store, never the Drive vault;
+  `.claude/launch.json` starts doubles, backend and frontend). This is the controlled stand-in
+  for systems that do not exist; nothing about it is live.
+- **Screen defects found and fixed**, each with a test: the Spine-papers card kept its stale
+  status after the link was saved by the neighbouring card (it now refetches when the link or
+  state changes); the cross-references panel still said FS lines are never checked; a Spine
+  paper's locked-fields note listed objective and procedure as locked; the Assembly screen drew
+  an empty "Not checked:" heading. One stale fixture text and one code comment that called the
+  Spine "not part of this product" were brought up to date.
+- **Verdict.** Every clause of sections 2–8 passes on this build, with the gaps the matrix
+  states: no module is live (contracts and doubles), template content is the specification's
+  words only, no reviewer-identity rule, one development identity, and a once-observed stale
+  Assembly screen that a reload corrected and that did not recur on re-assembly.
+
+## D41 · The request's commit lands before the response is sent — 1 Nov 2026
+
+The one defect the acceptance audit observed but could not explain (D40) was found and fixed.
+On the Assembly screen, right after a successful Assemble, the screen showed the new
+"assembled" event while still reading "State: open" until it was reloaded.
+
+- **Cause, reproduced on the development backend.** The request session is a dependency with
+  ``yield`` that commits after the endpoint returns. FastAPI 0.162 ends such a dependency, by
+  default, *after the response has been sent* (scope "request"). The screen's reload, a GET
+  36 ms after the POST's answer, therefore ran while the commit was still landing and, under
+  read committed, saw the binder row before the commit and the event rows after it:
+  `state: open` with the `assembled` event listed. Five further trials reproduced it once.
+- **Fix at the root.** `DbSession` is declared with `scope="function"`, so the commit completes
+  before the response leaves; a client's next request always sees what the previous one did.
+  `tests/test_session_scope.py` pins the declaration. Five trials after the fix: every
+  immediate GET reported the assembled state and the POST's own hash.
+- **Defence on the screen.** The Assembly screen now applies an action's own answer (Assemble,
+  Purge return the status computed inside the request) and ignores a reload that reports fewer
+  events than it already shows, since the audit trail is append-only. Three screen tests cover
+  the stale-reload case, a refused Assemble (state stays open, refusal shown) and re-assembly
+  after an amendment (hash replaced, trail extended).
+- **Scope.** Every endpoint commits through the same dependency, so every action-then-reload
+  pair on every screen had the same exposure; the fix covers them all.
+
 ## D10 · Pass 1 first — 28 Oct 2026
 
 Build order follows spec §6, Pass 1: index and templates · the WP record with

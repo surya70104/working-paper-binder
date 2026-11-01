@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     # optional bearer credential is sent when set; the Spine has no authentication today.
     spine_url: str | None = None
     spine_credential: str | None = None
+    # WorkMind (D37): the service root the Binder reads a run's acceptance from before it files
+    # a WorkMind paper (GET /api/runs/{run_id}). Unset means no WorkMind: a WorkMind delivery is
+    # refused (503) because its run cannot be verified. Optional bearer credential.
+    workmind_url: str | None = None
+    workmind_credential: str | None = None
     # Generated-paper intake (D31). Under OAK_AUTH=header only the identities listed here,
     # comma-separated, may deliver papers; none listed means no intake. An optional bearer
     # the module must present on the intake endpoint. The provenance block's size cap.
@@ -119,15 +124,16 @@ class Settings(BaseSettings):
         name = f"OAK_{(info.field_name or 'database_url').upper()}"
         return check_binder_url(value, allowed=frozenset({APP_DATABASE, TEST_DATABASE}), name=name)
 
-    @field_validator("spine_url")
+    @field_validator("spine_url", "workmind_url")
     @classmethod
-    def _spine_url(cls, value: str | None) -> str | None:
+    def _service_url(cls, value: str | None, info: ValidationInfo) -> str | None:
         if value is None or not value.strip():
             return None
         parsed = urlparse(value.strip())
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            name = f"OAK_{(info.field_name or 'spine_url').upper()}"
             raise ValueError(
-                "OAK_SPINE_URL must be an http:// or https:// URL with a host, "
+                f"{name} must be an http:// or https:// URL with a host, "
                 "for example http://127.0.0.1:8000"
             )
         return value.strip().rstrip("/")
@@ -205,6 +211,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OAK_SPINE_URL must use https:// when OAK_ENV=production unless the Spine is "
                 "on the loopback interface (architecture D29)"
+            )
+        if self.workmind_url and not spine_url_is_secure(self.workmind_url):
+            raise ValueError(
+                "OAK_WORKMIND_URL must use https:// when OAK_ENV=production unless WorkMind is "
+                "on the loopback interface (architecture D37)"
             )
         if make_url(self.database_url).database != APP_DATABASE:
             raise ValueError(f"OAK_DATABASE_URL must name {APP_DATABASE} when OAK_ENV=production")

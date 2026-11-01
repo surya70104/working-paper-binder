@@ -11,9 +11,17 @@ export function AssemblyPage({ id }: { id: string }) {
   const [verification, setVerification] = useState<Verification | null>(null);
   const [confirmPurge, setConfirmPurge] = useState(false);
 
+  // An action's own answer is the status after it (computed inside the request, so it is
+  // never stale); a reload that reports fewer events than what is shown is an older read and
+  // is ignored, since the audit trail is append-only (D41).
+  const apply = useCallback((fresh: AssemblyStatus) => {
+    setStatus((current) =>
+      current && fresh.events.length < current.events.length ? current : fresh,
+    );
+  }, []);
   const load = useCallback(async () => {
-    setStatus(await api.getAssembly(id));
-  }, [id]);
+    apply(await api.getAssembly(id));
+  }, [id, apply]);
   const { run, busy, error, setError } = useAction(load);
   useEffect(() => {
     load().catch((e: Error) => setError(e.message));
@@ -79,18 +87,26 @@ export function AssemblyPage({ id }: { id: string }) {
         ) : (
           <p className="mt-2 text-sm text-green-800">Nothing blocks assembly.</p>
         )}
-        <p className="mt-3 text-xs text-slate-500">Not checked:</p>
-        <ul className="list-disc pl-5 text-xs text-slate-500">
-          {status.not_checked.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
+        {status.not_checked.length > 0 && (
+          <>
+            <p className="mt-3 text-xs text-slate-500">Not checked:</p>
+            <ul className="list-disc pl-5 text-xs text-slate-500" data-testid="not-checked">
+              {status.not_checked.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          </>
+        )}
         {!purged && (
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"
               disabled={busy || blocked}
-              onClick={() => void run(() => api.assemble(id))}
+              onClick={() =>
+                void run(async () => {
+                  apply(await api.assemble(id));
+                })
+              }
               className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:opacity-50"
             >
               {assembled ? "Re-assemble after amendments" : "Assemble"}
@@ -228,7 +244,9 @@ export function AssemblyPage({ id }: { id: string }) {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void run(() => api.purge(id))}
+                  onClick={() => void run(async () => {
+                      apply(await api.purge(id));
+                    })}
                   className="rounded bg-red-700 px-3 py-1.5 text-sm text-white hover:bg-red-800 disabled:opacity-50"
                 >
                   Confirm purge

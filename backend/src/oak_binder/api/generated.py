@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from oak_binder.api.deps import CurrentUser, DbSession, Now, Spine
+from oak_binder.api.deps import CurrentUser, DbSession, Now, Spine, WorkMind
 from oak_binder.api.papers import paper_out
 from oak_binder.config import Settings
 from oak_binder.errors import Forbidden, NotFound
@@ -57,12 +57,19 @@ def receive(
     user: CurrentUser,
     now: Now,
     spine: Spine,
+    workmind: WorkMind,
 ) -> PaperOut:
     intake_gate(request, user)
     binder = binders.get_binder(session, binder_id)
     settings: Settings = request.app.state.settings
     paper = generated.receive(
-        session, binder, body, user=user, now=now, max_bytes=settings.max_provenance_bytes
+        session,
+        binder,
+        body,
+        user=user,
+        now=now,
+        max_bytes=settings.max_provenance_bytes,
+        workmind=workmind,
     )
     return paper_out(session, paper.id, spine)
 
